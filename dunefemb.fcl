@@ -1,0 +1,11 @@
+# dunefemb.fcl
+#
+# David Adams
+# Top level fcl file for dunefemb.
+
+#include "tools_dune.fcl"
+
+tools.mytool: {
+  tool_type: HelloTool
+  message: "Hello!"
+}
