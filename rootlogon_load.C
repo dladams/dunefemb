@@ -35,5 +35,7 @@
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/ArtSupport/DuneToolManager.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/AdcChannelData.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcDataViewer.h+");
+  // Build local classes.
+  gROOT->ProcessLine(".L DuneFembReader.cxx+");
 }
 
