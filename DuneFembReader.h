@@ -20,28 +20,44 @@ class DuneFembReader {
 
 public:
 
+  using Index = UShort_t;
+  using Entry = Long64_t;
+  using Waveform = std::vector<unsigned short>;
+
   // Bad subrun or channel.
-  static UShort_t badVal() { return UShort_t(-1); }
+  static Index badIndex() { return Index(-1); }
 
   // Bad entry.
-  static Long64_t badEntry() { return -1; }
+  static Entry badEntry() { return -1; }
 
 public:
 
   // Ctor from a file.
   DuneFembReader(std::string fname);
 
-  // Read data for one entry (waveform) in the tree.
+  // Dtor.
+  ~DuneFembReader();
+
+  // Read the subrun and channel for one entry (waveform) in the tree.
+  int read(Long64_t ient);
+
+  // Read the subrun, channel and waveform for one entry (waveform) in the tree.
   // If pacd is not null, the channel and waveform are copied to it.
-  int read(Long64_t ient, AdcChannelData* pacd);
+  int readWaveform(Long64_t ient, AdcChannelData* pacd);
+
+  // Find the entry for a subrun and channel.
+  // Also sets the subrun and channel.
+  Entry find(Index subrun, Index chan);
 
   // Read data for one subrun and channel.
   // If pacd is not null, the channel and waveform are copied to it.
-  int read(UShort_t subrun, UShort_t, AdcChannelData* pacd);
+  int read(Index subrun, Index, AdcChannelData* pacd);
 
   // Return the index data for the current entry.
-  UShort_t subrun() const { return m_subrun; }
-  UShort_t channel() { return m_chan; }
+  Entry entry() const { return m_entry; }
+  Index subrun() const { return m_subrun; }
+  Index channel() const { return m_chan; }
+  const Waveform* waveform() const { return m_pwf; }
   
   // Return the file.
   TFile* file() const { return m_pfile; }
@@ -53,10 +69,10 @@ private:
 
   TFile* m_pfile;
   TTree* m_ptree;
-  Long64_t m_entry;
-  UShort_t m_subrun;
-  UShort_t m_chan;
-  std::vector<unsigned short>* m_pwf;
+  Entry m_entry;
+  Index m_subrun;
+  Index m_chan;
+  Waveform* m_pwf;
 
 };
 

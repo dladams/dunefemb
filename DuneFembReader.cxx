@@ -10,18 +10,19 @@ using std::string;
 using std::cout;
 using std::endl;
 
-UShort_t badVal = -1;
+using Index = DuneFembReader::Index;
+using Entry = DuneFembReader::Entry;
 
 //**********************************************************************
 
 DuneFembReader::DuneFembReader(string fname)
 : m_pfile(nullptr), m_ptree(nullptr),
   m_entry(badEntry()),
-  m_subrun(badVal()), m_chan(badVal()), m_pwf(nullptr) {
+  m_subrun(badIndex()), m_chan(badIndex()), m_pwf(nullptr) {
   const string myname = "DuneFembReader::ctor: ";
   m_pfile = TFile::Open(fname.c_str(), "READ");
   if ( m_pfile == nullptr || ! m_pfile->IsOpen() ) {
-    cout << myname << "Unable to ope file " << fname << endl;
+    cout << myname << "Unable to open file " << fname << endl;
     if ( m_pfile != nullptr ) {
       delete m_pfile;
       m_pfile = nullptr;
@@ -37,52 +38,73 @@ DuneFembReader::DuneFembReader(string fname)
   m_ptree->SetBranchAddress("subrun", &m_subrun);
   m_ptree->SetBranchAddress("chan",   &m_chan);
   m_ptree->SetBranchAddress("wf",     &m_pwf);
+  m_pwf = nullptr;
 }
 
 //**********************************************************************
 
-int DuneFembReader::
-read(Long64_t ient, AdcChannelData* pacd) {
-  if ( tree() == nullptr ) return m_entry = badEntry();
-  Int_t nbyte = tree()->GetEntry(ient);
-  if ( nbyte <= 0 ) {
-    m_entry  = badEntry();
-    m_subrun = badVal();
-    m_chan   = badVal();
-    m_pwf = nullptr;
-    return 1;
-  }
+DuneFembReader::~DuneFembReader() {
+  m_pfile->Close();
+  delete m_pfile;
+}
+
+//**********************************************************************
+
+int DuneFembReader::read(Entry ient) {
+  if ( tree() == nullptr ) return 1;
+  if ( ient == badEntry() ) return 2;
   m_entry = ient;
-  if ( pacd != nullptr ) {
-    pacd->channel = channel();
-    pacd->raw.resize(m_pwf->size());
-    std::copy(m_pwf->begin(), m_pwf->end(), pacd->raw.end());
-  }
+  tree()->SetBranchStatus("wf", false);
+  m_pwf = nullptr;
+  tree()->GetEntry(ient);
   return 0;
 }
   
 //**********************************************************************
 
 int DuneFembReader::
-read(UShort_t a_subrun, UShort_t a_chan, AdcChannelData* pacd) {
-  Long64_t nent = tree()->GetEntries();
-  Long64_t ent0 = m_entry==badEntry() ? 0 : (m_entry)%nent;
-  Long64_t ient = ent0;
+readWaveform(Entry ient, AdcChannelData* pacd) {
+  if ( tree() == nullptr ) return 1;
+  if ( ient == badEntry() ) return 2;
+  m_entry = ient;
+  tree()->SetBranchStatus("wf", true);
+  tree()->GetEntry(ient);
+  if ( pacd != nullptr ) {
+    pacd->channel = channel();
+    pacd->raw.resize(m_pwf->size());
+    std::copy(m_pwf->begin(), m_pwf->end(), pacd->raw.begin());
+  }
+  return 0;
+}
+  
+//**********************************************************************
+
+Entry DuneFembReader::
+find(Index a_subrun, Index a_chan) {
+  Entry nent = tree()->GetEntries();
+  Entry ent0 = m_entry==badEntry() ? 0 : (m_entry)%nent;
+  Entry ient = ent0;
   bool first = true;
   while ( first || ient != ent0 ) {
     first = false;
-    read(ient, nullptr);
+    if ( read(ient) ) break;
     if ( subrun() == a_subrun && channel() == a_chan ) {
-      if ( pacd != nullptr ) read(ient, pacd);
-      return 0;
+      return m_entry = ient;
     }
     ient = (ient + 1)%nent;
   }
   m_entry  = badEntry();
-  m_subrun = badVal();
-  m_chan   = badVal();
-  m_pwf = nullptr;
-  return 1;
+  m_subrun = badIndex();
+  m_chan   = badIndex();
+  return m_entry;
+}
+
+//**********************************************************************
+
+int DuneFembReader::
+read(Index a_subrun, Index a_chan, AdcChannelData* pacd) {
+  Entry ient = find(a_subrun, a_chan);
+  return readWaveform(ient, pacd);
 }
 
 //**********************************************************************
