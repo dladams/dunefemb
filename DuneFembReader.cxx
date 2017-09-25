@@ -15,10 +15,11 @@ using Entry = DuneFembReader::Entry;
 
 //**********************************************************************
 
-DuneFembReader::DuneFembReader(string fname)
+DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun)
 : m_pfile(nullptr), m_ptree(nullptr),
+  m_run(a_run), m_subrun(a_subrun),
   m_entry(badEntry()),
-  m_subrun(badIndex()), m_chan(badIndex()), m_pwf(nullptr) {
+  m_event(badIndex()), m_chan(badIndex()), m_pwf(nullptr) {
   const string myname = "DuneFembReader::ctor: ";
   m_pfile = TFile::Open(fname.c_str(), "READ");
   if ( m_pfile == nullptr || ! m_pfile->IsOpen() ) {
@@ -35,7 +36,7 @@ DuneFembReader::DuneFembReader(string fname)
     cout << myname << "Tree " << tname << " not found in file " << fname << endl;
     return;
   }
-  m_ptree->SetBranchAddress("subrun", &m_subrun);
+  m_ptree->SetBranchAddress("subrun", &m_event);
   m_ptree->SetBranchAddress("chan",   &m_chan);
   m_ptree->SetBranchAddress("wf",     &m_pwf);
   m_pwf = nullptr;
@@ -70,6 +71,9 @@ readWaveform(Entry ient, AdcChannelData* pacd) {
   tree()->SetBranchStatus("wf", true);
   tree()->GetEntry(ient);
   if ( pacd != nullptr ) {
+    if ( run() > 0 ) pacd->run = run();
+    if ( subrun() > 0 ) pacd->subRun = subrun();
+    pacd->event = event();
     pacd->channel = channel();
     pacd->raw.resize(m_pwf->size());
     std::copy(m_pwf->begin(), m_pwf->end(), pacd->raw.begin());
@@ -80,7 +84,7 @@ readWaveform(Entry ient, AdcChannelData* pacd) {
 //**********************************************************************
 
 Entry DuneFembReader::
-find(Index a_subrun, Index a_chan) {
+find(Index a_event, Index a_chan) {
   Entry nent = tree()->GetEntries();
   Entry ent0 = m_entry==badEntry() ? 0 : (m_entry)%nent;
   Entry ient = ent0;
@@ -88,13 +92,13 @@ find(Index a_subrun, Index a_chan) {
   while ( first || ient != ent0 ) {
     first = false;
     if ( read(ient) ) break;
-    if ( subrun() == a_subrun && channel() == a_chan ) {
+    if ( event() == a_event && channel() == a_chan ) {
       return m_entry = ient;
     }
     ient = (ient + 1)%nent;
   }
   m_entry  = badEntry();
-  m_subrun = badIndex();
+  m_event = badIndex();
   m_chan   = badIndex();
   return m_entry;
 }
@@ -102,8 +106,8 @@ find(Index a_subrun, Index a_chan) {
 //**********************************************************************
 
 int DuneFembReader::
-read(Index a_subrun, Index a_chan, AdcChannelData* pacd) {
-  Entry ient = find(a_subrun, a_chan);
+read(Index a_event, Index a_chan, AdcChannelData* pacd) {
+  Entry ient = find(a_event, a_chan);
   return readWaveform(ient, pacd);
 }
 

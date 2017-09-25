@@ -5,7 +5,10 @@
 //
 // Class that reads a waveform from a DUNE FEMB gain test file
 // into AdcChannelData. These files hold waveforms for multiple
-// subruns and multiple channels.
+// events (aka subruns) and multiple channels.
+//
+// Note that the field "subrun" in the tree is used to assing the event
+// number here.
 
 #ifndef DuneFembReader_H
 #define DuneFembReader_H
@@ -24,7 +27,7 @@ public:
   using Entry = Long64_t;
   using Waveform = std::vector<unsigned short>;
 
-  // Bad subrun or channel.
+  // Bad event/subrun or channel.
   static Index badIndex() { return Index(-1); }
 
   // Bad entry.
@@ -33,29 +36,32 @@ public:
 public:
 
   // Ctor from a file.
-  DuneFembReader(std::string fname);
+  // If either the run or subrun is non-negative, then it is used to
+  // set the correponding field in any filled channel data.
+  DuneFembReader(std::string fname, int run =-1, int subrun =-1);
 
   // Dtor.
   ~DuneFembReader();
 
-  // Read the subrun and channel for one entry (waveform) in the tree.
+  // Read the event/subrun and channel for one entry (waveform) in the tree.
   int read(Long64_t ient);
 
-  // Read the subrun, channel and waveform for one entry (waveform) in the tree.
+  // Read the event/subrun, channel and waveform for one entry (waveform) in the tree.
   // If pacd is not null, the channel and waveform are copied to it.
   int readWaveform(Long64_t ient, AdcChannelData* pacd);
 
-  // Find the entry for a subrun and channel.
-  // Also sets the subrun and channel.
-  Entry find(Index subrun, Index chan);
+  // Find the entry for an event/subrun and channel.
+  Entry find(Index event, Index chan);
 
-  // Read data for one subrun and channel.
+  // Read data for one event and channel.
   // If pacd is not null, the channel and waveform are copied to it.
-  int read(Index subrun, Index, AdcChannelData* pacd);
+  int read(Index event, Index channel, AdcChannelData* pacd);
 
   // Return the index data for the current entry.
+  int run() const { return m_run; }
+  int subrun() const { return m_subrun; }
   Entry entry() const { return m_entry; }
-  Index subrun() const { return m_subrun; }
+  Index event() const { return m_event; }
   Index channel() const { return m_chan; }
   const Waveform* waveform() const { return m_pwf; }
   
@@ -69,8 +75,10 @@ private:
 
   TFile* m_pfile;
   TTree* m_ptree;
+  int m_run;
+  int m_subrun;
   Entry m_entry;
-  Index m_subrun;
+  Index m_event;
   Index m_chan;
   Waveform* m_pwf;
 
