@@ -26,7 +26,7 @@ public:
   // Ctor from (partial) timestamp and gain params.
   explicit DuneFembFinder(std::string topdir ="/home/dladams/data/dune/femb");
 
-  // Find a samples specified by timestamp.
+  // Find a sample specified by timestamp.
   RdrPtr find(std::string ts, Index gain, Index shap, bool extPulse, bool extClock);
 
   // Find a sample specified by FEMB ID, temperature and partial timestamp.

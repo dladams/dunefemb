@@ -213,7 +213,15 @@ Index gain, Index shap, bool extPulse, bool extClock) {
     return nullptr;
   }
   string myts = matchedTss.front();
-  return std::move(find(myts, gain, shap, extPulse, extClock));
+  RdrPtr prdr = std::move(find(myts, gain, shap, extPulse, extClock));
+  ostringstream sslab;
+  sslab << "FEMB " << fembId << " g" << gain << " s" << shap
+        << (tspat.size() ? " " : "") << tspat
+        << " " << (isCold ? "cold" : "warm")
+        << " " << (extPulse ? "ext" : "int") << "Pulse"
+        << " " << (extClock ? "ext" : "int") << "Clock";
+  prdr->setLabel(sslab.str());
+  return prdr;
 }
 
 //**********************************************************************

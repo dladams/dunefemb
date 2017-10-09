@@ -38,10 +38,13 @@ public:
   // Ctor from a file.
   // If either the run or subrun is non-negative, then it is used to
   // set the correponding field in any filled channel data.
-  DuneFembReader(std::string fname, int run =-1, int subrun =-1);
+  DuneFembReader(std::string fname, int run =-1, int subrun =-1, std::string a_label ="");
 
   // Dtor.
   ~DuneFembReader();
+
+  // Set the label.
+  void setLabel(std::string a_label) { m_label = a_label; }
 
   // Read the event/subrun and channel for one entry (waveform) in the tree.
   int read(Long64_t ient);
@@ -60,6 +63,7 @@ public:
   // Return the index data for the current entry.
   int run() const { return m_run; }
   int subrun() const { return m_subrun; }
+  std::string label() const { return m_label; }
   Entry entry() const { return m_entry; }
   Index event() const { return m_event; }
   Index channel() const { return m_chan; }
@@ -77,6 +81,7 @@ private:
   TTree* m_ptree;
   int m_run;
   int m_subrun;
+  std::string m_label;
   Entry m_entry;
   Index m_event;
   Index m_chan;

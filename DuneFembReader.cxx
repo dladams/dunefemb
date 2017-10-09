@@ -15,9 +15,9 @@ using Entry = DuneFembReader::Entry;
 
 //**********************************************************************
 
-DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun)
+DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_label)
 : m_pfile(nullptr), m_ptree(nullptr),
-  m_run(a_run), m_subrun(a_subrun),
+  m_run(a_run), m_subrun(a_subrun), m_label(a_label),
   m_entry(badEntry()),
   m_event(badIndex()), m_chan(badIndex()), m_pwf(nullptr) {
   const string myname = "DuneFembReader::ctor: ";
@@ -40,6 +40,20 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun)
   m_ptree->SetBranchAddress("chan",   &m_chan);
   m_ptree->SetBranchAddress("wf",     &m_pwf);
   m_pwf = nullptr;
+  if ( m_label.size() == 0 ) {
+    string::size_type jpos = fname.rfind("/");
+    if ( jpos != string::npos && jpos != 0 ) {
+      string::size_type ipos = fname.rfind("/", jpos - 1);
+      if ( ipos != string::npos && ipos != 0 ) {
+        ipos = fname.rfind("/", ipos - 1);
+        if ( ipos != string::npos ) {
+          ++ipos;
+          m_label = fname.substr(ipos, jpos-ipos);
+        }
+      }
+    }
+  }
+  if ( m_label.size() == 0 ) m_label = fname;
 }
 
 //**********************************************************************
