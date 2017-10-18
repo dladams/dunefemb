@@ -54,6 +54,16 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_l
     }
   }
   if ( m_label.size() == 0 ) m_label = fname;
+  cout << myname << "Fetching channel counts." << endl;
+  for ( Index ient=0; ient<m_ptree->GetEntries(); ++ient ) {
+    read(ient);
+    Index ievt = event();
+    Index nevt = ievt + 1;
+    Index ncha = channel() + 1;
+    if ( nevt > m_nChan.size() ) m_nChan.resize(nevt, 0);
+    if ( m_nChan[ievt] <= ncha ) m_nChan[ievt] = ncha;
+  }
+  cout << myname << "Done fetching channel counts." << endl;
 }
 
 //**********************************************************************

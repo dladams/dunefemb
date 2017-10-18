@@ -153,13 +153,23 @@ find(string ts, Index gain, Index shap, bool extPulse, bool extClock) {
         << ( extClock ? "" : "_intclock" );
   string spat = sspat.str();
   FileMap dsdirs = tsdir.find(spat);
+  // External clock files are distinguished by not having "intclock" in their file names.
+  if ( extClock ) {
+    vector<string> dropKeys;
+    for ( const FileMap::value_type& ent : dsdirs ) {
+      string key = ent.first;
+      if ( key.find("_intclock") != string::npos ) dropKeys.push_back(key);
+    }
+    for ( string key : dropKeys ) dsdirs.erase(key);
+  }
   if ( dsdirs.size() == 0 ) {
     cout << myname << "No match found for param pattern " << spat << endl;
     tsdir.print();
     return nullptr;
   }
   if ( dsdirs.size() > 1 ) {
-    cout << myname << "Multiple matches found for param pattern " << spat << ":" << endl;
+    cout << myname << "Multiple matches (" << dsdirs.size() << ") found for param pattern "
+         << spat << ":" << endl;
     for ( auto ent : dsdirs ) {
       cout << myname << "  " << ent.first << endl;
     }
@@ -214,13 +224,15 @@ Index gain, Index shap, bool extPulse, bool extClock) {
   }
   string myts = matchedTss.front();
   RdrPtr prdr = std::move(find(myts, gain, shap, extPulse, extClock));
-  ostringstream sslab;
-  sslab << "FEMB " << fembId << " g" << gain << " s" << shap
-        << (tspat.size() ? " " : "") << tspat
-        << " " << (isCold ? "cold" : "warm")
-        << " " << (extPulse ? "ext" : "int") << "Pulse"
-        << " " << (extClock ? "ext" : "int") << "Clock";
-  prdr->setLabel(sslab.str());
+  if ( prdr != nullptr ) {
+    ostringstream sslab;
+    sslab << "FEMB " << fembId << " g" << gain << " s" << shap
+          << (tspat.size() ? " " : "") << tspat
+          << " " << (isCold ? "cold" : "warm")
+          << " " << (extPulse ? "ext" : "int") << "Pulse"
+          << " " << (extClock ? "ext" : "int") << "Clock";
+    prdr->setLabel(sslab.str());
+  }
   return prdr;
 }
 

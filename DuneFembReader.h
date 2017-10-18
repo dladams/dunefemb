@@ -75,6 +75,12 @@ public:
   // Return the tree.
   TTree* tree() const { return m_ptree; }
 
+  // Return the maximum event number plus one in the tree.
+  Index nEvent() const { return m_nChan.size(); }
+
+  // Return the maximum channel number plus one for a given event.
+  Index nChannel(Index ievt) const { return ievt < nEvent() ? m_nChan[ievt] : 0; }
+
 private:
 
   TFile* m_pfile;
@@ -86,6 +92,7 @@ private:
   Index m_event;
   Index m_chan;
   Waveform* m_pwf;
+  vector<Index> m_nChan;
 
 };
 

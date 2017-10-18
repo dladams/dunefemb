@@ -1,10 +1,13 @@
-// DuneFembFinder
+// DuneFembFinder.h
 
 // David Adams
 // August 2017
 //
 // Class to find DUNE FEMB test data and return a reader for a dataset
 // specified by
+
+#ifndef DuneFembFinder_H
+#define DuneFembFinder_H
 
 #include<string>
 #include <vector>
@@ -40,3 +43,5 @@ private:
   FembMap m_coldFembMap;
 
 };
+
+#endif

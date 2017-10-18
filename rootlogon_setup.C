@@ -5,7 +5,7 @@
 //
 // Root startup file fo dunefemb.
 
-#define ADDSERVICES 0
+#define ADDSERVICES 1
 
 // Define service helper.
 #if ADDSERVICES
@@ -17,7 +17,9 @@ DuneToolManager* ptm = nullptr;
 HistogramManager* phm = nullptr;
 
 int rootlogon_setup() {
+  cout << "Fetching tool manager." << endl;
   ptm = DuneToolManager::instance("dunefemb.fcl");
+  cout << "Fetching histogram manager." << endl;
   phm = ptm->getShared<HistogramManager>("adcHists");
 #if ADDSERVICES
   cout << "     Service helper: ash" << endl;

@@ -9,3 +9,16 @@ tools.mytool: {
   tool_type: HelloTool
   message: "Hello!"
 }
+
+# Fill sample from 12-bit ADC data.
+tools.adcSampleFillerDbg: {
+  tool_type: AdcSampleFiller
+  LogLevel: 2
+  AdcUnderflow: 0
+  AdcOverflow: 4095
+}
+
+tools.adcThresholdSignalFinder.Threshold:  70
+tools.adcThresholdSignalFinder.BinsBefore:  7
+tools.adcThresholdSignalFinder.BinsAfter:  10
+

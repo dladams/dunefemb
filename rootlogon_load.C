@@ -29,17 +29,23 @@
     gSystem->AddLinkedLibs(libres.c_str());
   }
   // Load the classes we would like available on the command line.
+  cout << "Loading dunetpc classes." << endl;
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/ArtSupport/DuneToolManager.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneCommon/TPadManipulator.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/AdcChannelData.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcChannelViewer.h+");
+  gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcChannelDataModifier.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcDataViewer.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/HistogramManager.h+");
   gROOT->ProcessLine(".L $DUNETPC_LIB/libdune_DuneCommon.so");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/ArtSupport/ArtServiceHelper.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneServiceAccess/DuneServiceAccess.h+");
   // Build local classes.
+  cout << "Loading local classes." << endl;
   gROOT->ProcessLine(".L DuneFembReader.cxx+");
   gROOT->ProcessLine(".L dunesupport/FileDirectory.cxx+");
   gROOT->ProcessLine(".L DuneFembFinder.cxx+");
+  gROOT->ProcessLine(".L FembTestAnalyzer.cxx+");
+  gROOT->ProcessLine(".L draw.cxx+");
+  cout << "Finished loading." << endl;
 }
