@@ -4,6 +4,9 @@
 #define FembTestAnalyzer_H
 
 #include <memory>
+#include "dune/DuneInterface/Data/DataMap.h"
+#include "dune/DuneInterface/Tool/AdcChannelDataModifier.h"
+#include "dune/DuneInterface/Tool/AdcChannelViewer.h"
 #include "DuneFembReader.h"
 
 class FembTestAnalyzer {
@@ -25,7 +28,7 @@ public:
   int find(int gain, int shap, bool extPulse =true, bool extClock =true);
 
   // Return the reader for the current sample.
-  DuneFembReader* reader() { return m_reader.get(); }
+  DuneFembReader* reader() const { return m_reader.get(); }
 
   // Return the parameters specifying the current sample.
   int femb() const { return m_femb; }
@@ -38,7 +41,26 @@ public:
 
   // Event and channel counts for the current sample.
   Index nEvent() const { return m_reader == nullptr ? 0 : m_reader->nEvent(); }
+  Index nChannel() const { return m_reader == nullptr ? 0 : m_reader->nChannel(); }
   Index nChannel(Index ievt) const { return m_reader == nullptr ? 0 : m_reader->nChannel(ievt); }
+
+  // Some constants.
+  double elecPerFc() const { return 6241.51; }
+  double fembCfF() const { return 183.0; }
+  double fembVmV() const { return 18.75; }
+
+  // Return a graph of signal vs. input charge.
+  // Error bars are the RMS of each meaurment (not the RMS of the mean).
+  const DataMap& processChannelEvent(Index icha, Index ievt);
+
+  // Process a channel.
+  DataMap getChannelResponse(Index icha, bool usePos =true, bool useArea =true);
+  DataMap processChannel(Index icha);
+
+public:
+
+  int dbg = 0;
+  std::vector<std::vector<DataMap>> results;    // results[icha][ievt]
 
 private:
 
@@ -50,6 +72,8 @@ private:
   bool m_extPulse;
   bool m_extClock;
   std::unique_ptr<DuneFembReader> m_reader;
+  std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
+  std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
 
 };
 

@@ -19,7 +19,8 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_l
 : m_pfile(nullptr), m_ptree(nullptr),
   m_run(a_run), m_subrun(a_subrun), m_label(a_label),
   m_entry(badEntry()),
-  m_event(badIndex()), m_chan(badIndex()), m_pwf(nullptr) {
+  m_event(badIndex()), m_chan(badIndex()), m_pwf(nullptr),
+  m_nChan(0) {
   const string myname = "DuneFembReader::ctor: ";
   m_pfile = TFile::Open(fname.c_str(), "READ");
   if ( m_pfile == nullptr || ! m_pfile->IsOpen() ) {
@@ -60,8 +61,9 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_l
     Index ievt = event();
     Index nevt = ievt + 1;
     Index ncha = channel() + 1;
-    if ( nevt > m_nChan.size() ) m_nChan.resize(nevt, 0);
-    if ( m_nChan[ievt] <= ncha ) m_nChan[ievt] = ncha;
+    if ( nevt > m_nChanPerEvent.size() ) m_nChanPerEvent.resize(nevt, 0);
+    if ( m_nChanPerEvent[ievt] <= ncha ) m_nChanPerEvent[ievt] = ncha;
+    if ( ncha >  m_nChan ) m_nChan = ncha;
   }
   cout << myname << "Done fetching channel counts." << endl;
 }

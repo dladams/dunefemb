@@ -3,7 +3,8 @@
 // David Adams
 // October 2017
 //
-// Example script that draws a histogram created with a dunetpc tool.
+// Example script that uses local classes to find and read FEMB test data
+// and then uses dunetpc tools to proces and view that data.
 //
 //   femb - ID of the FEMB
 //   tspat - Timestamp pattern used to select the FEMB sample
