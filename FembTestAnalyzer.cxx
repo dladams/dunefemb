@@ -970,6 +970,8 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc) {
   ManMap::iterator iman = m_mans.find(mnam);
   if ( iman != m_mans.end() ) return &iman->second;
   TPadManipulator& man = m_mans[mnam];
+  int wy = gROOT->IsBatch() ? 2000 : 1000;
+  man.setCanvasSize(wx, 1.4*wx);
   man.split(4);
   for ( Index kcha=0; kcha<16; ++kcha ) {
     Index icha = 16*iadc + kcha;
