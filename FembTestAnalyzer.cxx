@@ -965,7 +965,7 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc) {
   const string myname = "FembTestAnalyzer::drawAdc: ";
   ostringstream ssnam;
   if ( iadc < 0 || iadc > 7 ) return nullptr;
-  snam << "adc" << iadc << "_" sopt;
+  ssnam << "adc" << iadc << "_" << sopt;
   string mnam = ssnam.str();
   ManMap::iterator iman = m_mans.find(mnam);
   if ( iman != m_mans.end() ) return &iman->second;
@@ -973,13 +973,13 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc) {
   man.split(4);
   for ( Index kcha=0; kcha<16; ++kcha ) {
     Index icha = 16*iadc + kcha;
-    TPadManipulator pman = draw(sopt, icha);
+    TPadManipulator* pman = draw(sopt, icha);
     if ( pman == nullptr ) {
       cout << myname << "Unable to find plot " << sopt << " for channel " << icha << endl;
       m_mans.erase(mnam);
       return nullptr;
     }
-    man.man(kcha) = *pman;
+    *man.man(kcha) = *pman;
   }
   return &man;
 }
