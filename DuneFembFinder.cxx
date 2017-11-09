@@ -117,8 +117,30 @@ DuneFembFinder::DuneFembFinder(string topdir)
 
 //**********************************************************************
 
+RdrPtr DuneFembFinder::find(string dir, string fpat) {
+  const string myname = "DuneFembFinder::find: ";
+  string dsdir = m_topdir + "/" + dir;
+  FileDirectory ftopdir(dsdir);
+  FileMap dsfiles = ftopdir.find(fpat);
+  if ( dsfiles.size() == 0 ) {
+    cout << myname << "Unable to find file pattern " << fpat << " in " << dsdir << endl;
+    return nullptr;
+  }
+  if ( dsfiles.size() > 1 ) {
+    cout << myname << "Found multiple matches:" << endl;
+    for ( auto ent : dsfiles ) {
+      cout << "  " << dsdir << "/" << ent.first << endl;
+    }
+    return nullptr;
+  }
+  string dsfile = dsdir + "/" + dsfiles.begin()->first;
+  return std::move(RdrPtr(new DuneFembReader(dsfile, 123, 456)));
+}
+
+//**********************************************************************
+
 RdrPtr DuneFembFinder::
-find(string ts, Index gain, Index shap, bool extPulse, bool extClock) {
+find(string ts, Index gain, Index shap, bool a_extPulse, bool a_extClock) {
   const string myname = "DuneFembFinder::find: ";
   FileDirectory ftopdir(m_topdir);
   int ndir = ftopdir.select("wib");
@@ -149,12 +171,12 @@ find(string ts, Index gain, Index shap, bool extPulse, bool extClock) {
   FileDirectory tsdir(tsdirs[0]);
   ostringstream sspat;
   sspat << "fembTest_gainenc_test_g" << gain << "_s" << shap
-        << "_" << ( extPulse ? "extpulse" : "intpulse" )
-        << ( extClock ? "" : "_intclock" );
+        << "_" << ( a_extPulse ? "extpulse" : "intpulse" )
+        << ( a_extClock ? "" : "_intclock" );
   string spat = sspat.str();
   FileMap dsdirs = tsdir.find(spat);
   // External clock files are distinguished by not having "intclock" in their file names.
-  if ( extClock ) {
+  if ( a_extClock ) {
     vector<string> dropKeys;
     for ( const FileMap::value_type& ent : dsdirs ) {
       string key = ent.first;
@@ -188,7 +210,9 @@ find(string ts, Index gain, Index shap, bool extPulse, bool extClock) {
     }
   }
   string dsfile = dsdir.dirname + "/" + dsfiles.begin()->first;
-  return std::move(RdrPtr(new DuneFembReader(dsfile, 123, 456)));
+  RdrPtr prdr(new DuneFembReader(dsfile, 123, 456));
+  prdr->setMetadata(gain, shap, a_extPulse, a_extClock);
+  return std::move(prdr);
 }
 
 //**********************************************************************

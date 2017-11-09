@@ -22,6 +22,7 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_l
   m_event(badIndex()), m_chan(badIndex()), m_pwf(nullptr),
   m_nChan(0) {
   const string myname = "DuneFembReader::ctor: ";
+  clearMetadata();
   m_pfile = TFile::Open(fname.c_str(), "READ");
   if ( m_pfile == nullptr || ! m_pfile->IsOpen() ) {
     cout << myname << "Unable to open file " << fname << endl;

@@ -26,13 +26,18 @@ public:
   using FembMap = std::map<Index, NameVector>;
   using RdrPtr = std::unique_ptr<DuneFembReader>;
 
-  // Ctor from (partial) timestamp and gain params.
+  // Ctor from topdir (where data is stored).
   explicit DuneFembFinder(std::string topdir ="/home/dladams/data/dune/femb");
 
-  // Find a sample specified by timestamp.
+  // Find a sample specified by directory and file pattern in topdir.
+  RdrPtr find(std::string dir, std::string fpat ="");
+
+  // Find a sample specified by timestamp and run params.
+  // Search is in topdir/wib*.
   RdrPtr find(std::string ts, Index gain, Index shap, bool extPulse, bool extClock);
 
   // Find a sample specified by FEMB ID, temperature and partial timestamp.
+  // Timestamp is found using topdir/fembjson.dat.
   RdrPtr find(Index fembId, bool isCold, std::string ts,
               Index gain, Index shap, bool extPulse, bool extClock);
 

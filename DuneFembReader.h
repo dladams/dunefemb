@@ -82,8 +82,29 @@ public:
   // Return the maximum channel number plus one for a given event.
   Index nChannel(Index ievt) const { return ievt < nEvent() ? m_nChanPerEvent[ievt] : 0; }
 
+  // Metadata.
+  void clearMetadata() {
+    m_gainIndex = 99;
+    m_shapingIndex = 99;
+    m_extPulse = 99;
+    m_extClock = 99;
+  }
+  void setMetadata(Index a_gainIndex, Index a_shapingIndex, bool a_extPulse, bool a_extClock) {
+    m_gainIndex = a_gainIndex;
+    m_shapingIndex = a_shapingIndex;
+    m_extPulse = a_extPulse;
+    m_extClock = a_extClock;
+  }
+  Index gainIndex() const { return m_gainIndex; }
+  Index shapingIndex() const { return m_shapingIndex; }
+  bool extPulse() const { return m_extPulse == 1; }
+  bool intPulse() const { return m_extPulse == 0; }
+  bool extClock() const { return m_extClock == 1; }
+  bool intClock() const { return m_extClock == 0; }
+
 private:
 
+  std::string m_fileName;
   TFile* m_pfile;
   TTree* m_ptree;
   int m_run;
@@ -95,6 +116,12 @@ private:
   Waveform* m_pwf;
   Index m_nChan;
   vector<Index> m_nChanPerEvent;
+
+  // Metadata.
+  Index m_gainIndex;
+  Index m_shapingIndex;
+  Index m_extPulse;   // 0 for internal, 1 for external
+  Index m_extClock;   // 0 for internal, 1 for external
 
 };
 
