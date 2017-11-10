@@ -76,11 +76,11 @@ public:
 
   // Return a single plot.
   // Use sopt = "help" for supported plots
-  TPadManipulator* draw(std::string sopt, int icha =-1);
+  TPadManipulator* draw(std::string sopt, int icha =-1, int ievt =-1);
 
   // Return a plot of all 16 channels in an ADC.
   // Use sopt = "help" for supported plots
-  TPadManipulator* drawAdc(std::string sopt, int iadc =-1);
+  TPadManipulator* drawAdc(std::string sopt, int iadc =-1, int ievt =-1);
 
 public:
 

@@ -7,6 +7,7 @@
 #include "dune/ArtSupport/DuneToolManager.h"
 #include "DuneFembFinder.h"
 #include "TGraphErrors.h"
+#include "TROOT.h"
 #include "TF1.h"
 #include "TPad.h"
 #include "TLatex.h"
@@ -58,6 +59,7 @@ FembTestAnalyzer::FembTestAnalyzer(int a_femb, string a_tspat, bool a_isCold )
   }
   vector<string> acdViewerNames = {"adcRoiViewer"};
   acdViewerNames.push_back("adcPlotRaw");
+  acdViewerNames.push_back("adcPlotRawDist");
   for ( string vwrname : acdViewerNames ) {
     auto pvwr = ptm->getPrivate<AdcChannelViewer>(vwrname);
     if ( ! pvwr ) {
@@ -318,6 +320,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<bool> fitkeep(npt, true);
   double ymax = 1000.0;
   vector<float> peds(nevt, 0.0);
+  vector<float> nkeles(nevt, 0.0);
   Index iptPosGood = 0;  // Last good point for positive signals.
   Index iptNegGood = 0;
   Index nptPosBad = 0;
@@ -331,6 +334,9 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     }
     peds[ievt] = resevt.getFloat("pedestal");
     int roiCount = resevt.getInt("roiCount");
+    float nele = resevt.getFloat("nElectron");
+    float nkele = 0.001*nele;
+    nkeles[ievt] = nkele;
     if ( ievt > ievt0 ) {
       for ( bool usePos : usePosValues ) {
         string ssgn = usePos ? "Pos" : "Neg";
@@ -344,7 +350,6 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
         if ( resevt.haveFloat(meaName) ) {
           float sigmean = resevt.getFloat(meaName);
           float sigrms  = resevt.getFloat(rmsName);
-          float nele = resevt.getFloat("nElectron");
           bool isUnderOver = nudr>0 || novr>0;
           if ( isUnderOver ) {
             if ( usePos ) ++nptPosBad;
@@ -393,7 +398,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   Index nptf = xf.size();
   res.setInt("channel", icha);
   res.setFloatVector("peds", peds);
-  res.setFloatVector("nkes", x);
+  res.setFloatVector("nkes", nkeles);
   httl = "Response " + styp + usePosLab + "; Charge [ke]; Mean ADC " + styp;
   string gnam = "gchaResp" + styp + usePosOpt;
   // Create graph with all points.
@@ -596,7 +601,7 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
   Index npt = nkes.size();
   string gnamp = "gchaPeds";
   ostringstream ssttl;
-  ssttl << "Pedestal for channel " << icha;
+  ssttl << "Pedestals for channel " << icha;
   string gttl = ssttl.str();
   TGraph* pgp = new TGraph(npt, &nkes[0], &peds[0]);
   pgp->SetName(gnamp.c_str());
@@ -778,7 +783,7 @@ cout << myname << "Channel " << ich << endl;
 
 //**********************************************************************
 
-TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha) {
+TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
   const string myname = "FembTestAnalyzer::draw: ";
   if ( sopt == "help" ) {
     cout << myname << "           pedch - ADC pedestal for each channel" << endl;
@@ -790,12 +795,18 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha) {
     cout << myname << "  respresa, icha - Area response residual for channel icha" << endl;
     return nullptr;
   }
+  //using Fun = TPadManipulator* (*)(TPadManipulator&);
   const int wx = 700;
   const int wy = 500;
   string mnam = sopt;
   if ( icha >= 0 ) {
     ostringstream ssopt;
-    ssopt << sopt << "-" << icha;
+    ssopt << sopt << "_ch" << icha;
+    mnam = ssopt.str();
+  }
+  if ( ievt >= 0 ) {
+    ostringstream ssopt;
+    ssopt << sopt << "_ev" << ievt;
     mnam = ssopt.str();
   }
   ManMap::iterator iman = m_mans.find(mnam);
@@ -808,160 +819,167 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha) {
   plab->SetNDC();
   plab->SetTextSize(0.035);
   plab->SetTextFont(42);
-  // Pedestal vs. channel
-  if ( sopt == "pedch" ) {
-    TPadManipulator& man = m_mans[mnam];
-    TH1* ph = processAll().getHist("hchaPed");
-    if ( ph == nullptr ) {
+  TPadManipulator& man = m_mans[mnam];
+  man.add(plab, "");
+  man.addAxis();
+  // Plots 
+  if ( icha < 0 && ievt < 0 ) {
+    // Pedestal vs. channel
+    if ( sopt == "ped" ) {
+      TH1* ph = processAll().getHist("hchaPed");
+      if ( ph == nullptr ) {
       cout << myname << "Unable to find pedestal histogram hchaPed in this result:" << endl;
-      processAll().print();
-      return nullptr;
-    }
-    man.add(ph, "P");
-    man.setRangeY(0, 4100);
-    man.addVerticalModLines(16);
-    return &man;
-  // Pedestal vs. channel with ADC ranges
-  } else if ( sopt == "pedlimch" ) {
-    TPadManipulator& man = m_mans[mnam];
-    TH1* ph1 = processAll().getHist("hchaAdcMin");
-    TH1* ph2 = processAll().getHist("hchaAdcMax");
-    TH1* php = processAll().getHist("hchaPed");
-    if ( php == nullptr || ph1 == nullptr || ph2 == nullptr ) {
-      cout << myname << "Unable to find hchaAdcMin, hchaAdcMax or hchaPed in this result:" << endl;
-      processAll().print();
-      return nullptr;
-    }
-    if ( int rstat = man.add(ph2, "H") ) {
-      cout << myname << "Manipulator returned error " << rstat << endl;
-      return nullptr;
-    }
-    //ph1->SetFillStyle(3001);
-    man.add(ph1, "H same");
-    man.add(php, "P same");
-    man.hist()->SetFillColor(10);
-    man.hist()->SetLineColor(10);
-    man.hist()->SetLineWidth(0);
-    string sttl = "ADC pedestals and range for FEMB " + sfemb;
-    man.hist()->SetTitle(sttl.c_str());
-    man.hist()->GetYaxis()->SetTitle("ADC count");
-    man.setFrameFillColor(17);
-    man.setRangeY(0, 4100);
-    man.addVerticalModLines(16);
-    man.addAxis();
-    man.add(plab, "");
-    return &man;
-  // Gain vs. channel.
-  } else if ( sopt == "gainsch" ) {
-    TPadManipulator& man = m_mans[mnam];
-    TH1* ph1 = processAll().getHist("hgainHeightBoth");
-    TH1* ph2 = processAll().getHist("hgainAreaBoth");
-    if ( ph1 == nullptr || ph2 == nullptr ) {
-      cout << myname << "Unable to find hgainHeightBoth or hgainAreaBoth in process result:" << endl;
-      processAll().print();
-      return nullptr;
-    }
-    if ( int rstat = man.add(ph2, "H") ) {
-      cout << myname << "Manipulator returned error " << rstat << endl;
-      return nullptr;
-    }
-    //ph1->SetFillStyle(3001);
-    man.add(ph1, "same");
-    string sttl = "ADC gains for FEMB " + sfemb;
-    man.hist()->SetTitle(sttl.c_str());
-    //man.hist()->GetYaxis()->SetTitle("ADC count");
-    man.addVerticalModLines(16);
-    man.addAxis();
-    man.add(plab);
-    return &man;
-  } else if ( sopt == "ped" ) {
-    Index ievt = 0;
-    const DataMap& res = processChannelEvent(icha, ievt);
-    TH1* ph = res.getHist("pedestal");
-    if ( ph == nullptr ) return nullptr;
-    TPadManipulator& man = m_mans[mnam];
-    man.add(ph, "");
-    man.addHistFun(1);
-    man.addHistFun(0);
-    man.addVerticalModLines(64);
-    man.addAxis();
-    man.add(plab);
-    man.update();
-    return &man;
-  } else if ( sopt == "resph" || 
-              sopt == "respa" ||
-              sopt == "respresh" ||
-              sopt == "respresa" ) {
-    vector<string> gnams;
-    double ymin = -1500;
-    double ymax = 3000;
-    if ( sopt == "resph" ) gnams = {"gchaRespHeightBothFit", "gchaRespHeightBoth"};
-    if ( sopt == "respa" ) {
-      gnams = {"gchaRespAreaBothFit", "gchaRespAreaBoth"};
-      ymin = -15000;
-      ymax = 25000;
-    }
-    if ( sopt == "respresh" ) {
-      gnams = {"gchaRespHeightBothRes"};
-      ymin = -5;
-      ymax = 5;
-    }
-    if ( sopt == "respresa" ) {
-      gnams = {"gchaRespAreaBothRes"};
-      ymin = -5;
-      ymax = 5;
-    }
-    Index ngrf = gnams.size();
-/*
-    Index iadc = iopt;
-    if ( iadc > 8 ) return nullptr;
-    TPadManipulator& topman = m_mans[mnam];
-    topman.split(4);
-    Index ich0 = 16*iadc;
-    Index ievt = 0;
-    for ( Index ich=0; ich<16; ++ich ) {
-      const DataMap& res = processChannel(ich0+ich);
-    }
-    topman.update();
-    return &topman;
-  }
-*/
-    const DataMap& res = processChannel(icha);
-    vector<TGraph*> pgs;
-    for ( string gnam : gnams ) pgs.push_back(res.getGraph(gnam));
-    int nbad = 0;
-    for ( Index igrf=0; igrf<ngrf; ++igrf ) {
-      if ( pgs[igrf] == nullptr ) {
-        cout << myname << "Unable to find graph " << gnams[igrf] << " for result:" << endl;
-        ++nbad;
+        processAll().print();
+      } else {
+        man.add(ph, "P");
+        man.setRangeY(0, 4100);
+        man.addVerticalModLines(16);
+        return &man;
+      }
+    // Pedestal vs. channel with ADC ranges
+    } else if ( sopt == "pedlim" ) {
+      TH1* ph1 = processAll().getHist("hchaAdcMin");
+      TH1* ph2 = processAll().getHist("hchaAdcMax");
+      TH1* php = processAll().getHist("hchaPed");
+      if ( php == nullptr || ph1 == nullptr || ph2 == nullptr ) {
+        cout << myname << "Unable to find hchaAdcMin, hchaAdcMax or hchaPed in this result:" << endl;
+        processAll().print();
+      } else if ( int rstat = man.add(ph2, "H") ) {
+        cout << myname << "Manipulator returned error " << rstat << endl;
+      } else {
+        //ph1->SetFillStyle(3001);
+        man.add(ph1, "H same");
+        man.add(php, "P same");
+        man.hist()->SetFillColor(10);
+        man.hist()->SetLineColor(10);
+        man.hist()->SetLineWidth(0);
+        string sttl = "ADC pedestals and range for FEMB " + sfemb;
+        man.hist()->SetTitle(sttl.c_str());
+        man.hist()->GetYaxis()->SetTitle("ADC count");
+        man.setFrameFillColor(17);
+        man.setRangeY(0, 4100);
+        man.addVerticalModLines(16);
+        return &man;
+      }
+    // Gain vs. channel.
+    } else if ( sopt == "gains" ) {
+      TH1* ph1 = processAll().getHist("hgainHeightBoth");
+      TH1* ph2 = processAll().getHist("hgainAreaBoth");
+      if ( ph1 == nullptr || ph2 == nullptr ) {
+        cout << myname << "Unable to find hgainHeightBoth or hgainAreaBoth in process result:" << endl;
+        processAll().print();
+      } else if ( int rstat = man.add(ph2, "H") ) {
+        cout << myname << "Manipulator returned error " << rstat << endl;
+      } else {
+        man.add(ph1, "same");
+        string sttl = "ADC gains for FEMB " + sfemb;
+        man.hist()->SetTitle(sttl.c_str());
+        //man.hist()->GetYaxis()->SetTitle("ADC count");
+        man.addVerticalModLines(16);
+        return &man;
       }
     }
-    if ( nbad ) {
-      res.print();
-      return nullptr;
+  // Plots for channel icha
+  } else if ( icha >= 0 && ievt < 0 ) {
+    if ( sopt == "ped" ) {
+      const DataMap& res = processChannel(icha);
+      TGraph* pg = res.getGraph("gchaPeds");
+      float pedMin = res.getFloat("pedMin");
+      float pedMax = res.getFloat("pedMax");
+      if ( pg != nullptr ) {
+        man.add(pg, "AP*");
+        int iymin = (pedMin -  2.0)/10;
+        int iymax = (pedMax + 12.0)/10;
+        int ny = iymax - iymin;
+        float ymin = 10*iymin;
+        float ymax = 10*iymax;
+        while ( ny < 10 ) {
+          if ( fmod(ymax, pedMax) < fmod(pedMin, ymin) ) ymax += 10.0;
+          else ymin -= 10.0;
+          ++ny;
+        }
+        int npt = pg->GetN();
+        float x1 = pg->GetX()[0];
+        float x2 = pg->GetX()[npt-1];
+        float dx = 0.04*(x2 - x1);
+        float sx = 10.0;
+        float xmin = 10.0*int(x1/10) + sx;
+        float xmax = 10.0*int(x2/10) - sx;
+        while ( x1 - xmin < dx ) xmin -= sx;
+        while ( xmax - x2 < dx ) xmax += sx;
+        man.setRangeX(xmin, xmax);
+        man.setRangeY(ymin, ymax);
+        man.addHorizontalModLines(10);
+        return &man;
+      }
+    } else if ( sopt == "resph" || 
+           sopt == "respa" ||
+           sopt == "respresh" ||
+                sopt == "respresa" ) {
+      vector<string> gnams;
+      double ymin = -1500;
+      double ymax = 3000;
+      if ( sopt == "resph" ) gnams = {"gchaRespHeightBothFit", "gchaRespHeightBoth"};
+      if ( sopt == "respa" ) {
+        gnams = {"gchaRespAreaBothFit", "gchaRespAreaBoth"};
+        ymin = -15000;
+        ymax = 25000;
+      }
+      if ( sopt == "respresh" ) {
+        gnams = {"gchaRespHeightBothRes"};
+        ymin = -5;
+        ymax = 5;
+      }
+      if ( sopt == "respresa" ) {
+        gnams = {"gchaRespAreaBothRes"};
+        ymin = -5;
+        ymax = 5;
+      }
+      Index ngrf = gnams.size();
+      const DataMap& res = processChannel(icha);
+      vector<TGraph*> pgs;
+      for ( string gnam : gnams ) pgs.push_back(res.getGraph(gnam));
+      int nbad = 0;
+      for ( Index igrf=0; igrf<ngrf; ++igrf ) {
+        if ( pgs[igrf] == nullptr ) {
+          cout << myname << "Unable to find graph " << gnams[igrf] << " for result:" << endl;
+          ++nbad;
+        }
+      }
+      if ( nbad ) {
+        res.print();
+      } else {
+        man.add(pgs[0], "AP");
+        for ( Index igrf=1; igrf<ngrf; ++igrf ) man.add(pgs[igrf], "P");
+        man.setRangeY(ymin, ymax);
+        man.setGrid();
+        man.addHorizontalLine();
+        man.addVerticalLine();
+        return &man;
+      }
     }
-    TPadManipulator& man = m_mans[mnam];
-    man.add(pgs[0], "AP");
-    for ( Index igrf=1; igrf<ngrf; ++igrf ) man.add(pgs[igrf], "P");
-    man.setRangeY(ymin, ymax);
-    man.setGrid();
-    //man.addHistFun(1);
-    //man.addHistFun(0);
-    //man.addVerticalModLines(64);
-    man.addHorizontalLine();
-    man.addVerticalLine();
-    man.add(plab);
-    man.addAxis();
-    man.update();
-    return &man;
+  // Plots for event ievt in channel icha
+  } else if ( icha >= 0 && ievt >= 0 ) {
+    if ( sopt == "ped" ) {
+      const DataMap& res = processChannelEvent(icha, ievt);
+      TH1* ph = res.getHist("pedestal");
+      if ( ph != nullptr ) {
+        man.add(ph, "");
+        man.addHistFun(1);
+        man.addHistFun(0);
+        man.addVerticalModLines(64);
+        return &man;
+      }
+    }
   }
-  cout << myname << "Unknown plot name: " << sopt << endl;
+  cout << myname << "Invalid plot name: " << mnam << endl;
+  m_mans.erase(mnam);
   return nullptr;
 }
 
 //**********************************************************************
 
-TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc) {
+TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc, int ievt) {
   const string myname = "FembTestAnalyzer::drawAdc: ";
   ostringstream ssnam;
   if ( iadc < 0 || iadc > 7 ) return nullptr;
@@ -971,11 +989,11 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc) {
   if ( iman != m_mans.end() ) return &iman->second;
   TPadManipulator& man = m_mans[mnam];
   int wy = gROOT->IsBatch() ? 2000 : 1000;
-  man.setCanvasSize(wx, 1.4*wx);
+  man.setCanvasSize(1.4*wy, wy);
   man.split(4);
   for ( Index kcha=0; kcha<16; ++kcha ) {
     Index icha = 16*iadc + kcha;
-    TPadManipulator* pman = draw(sopt, icha);
+    TPadManipulator* pman = draw(sopt, icha, ievt);
     if ( pman == nullptr ) {
       cout << myname << "Unable to find plot " << sopt << " for channel " << icha << endl;
       m_mans.erase(mnam);

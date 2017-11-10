@@ -18,7 +18,8 @@ tools.adcSampleFillerDbg: {
   AdcOverflow: 4095
 }
 
-tools.adcThresholdSignalFinder.Threshold:  70
+tools.adcThresholdSignalFinder.Threshold:  70  # too low for FEMB 17, ch 112
+tools.adcThresholdSignalFinder.Threshold: 120
 tools.adcThresholdSignalFinder.BinsBefore:  7
 tools.adcThresholdSignalFinder.BinsAfter:  10
 
