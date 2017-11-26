@@ -8,7 +8,9 @@
 {
   cout << "Welcome to dunefemb." << endl;
   cout << endl;
-  gSystem->SetBuildDir(".aclic");
+  string dtver = gSystem->Getenv("DUNETPC_VERSION");
+  string buildDir = ".aclic_" + dtver;
+  gSystem->SetBuildDir(buildDir.c_str());
   string dtinc = gSystem->Getenv("DUNETPC_INC");
   cout << "Dunetpc include dir: " << dtinc << endl;
   string sarg = "-I" + dtinc;
@@ -46,6 +48,7 @@
   gROOT->ProcessLine(".L dunesupport/FileDirectory.cxx+");
   gROOT->ProcessLine(".L DuneFembFinder.cxx+");
   gROOT->ProcessLine(".L FembTestAnalyzer.cxx+");
+  gROOT->ProcessLine(".L FembDatasetAnalyzer.cxx+");
   gROOT->ProcessLine(".L draw.cxx+");
   cout << "Finished loading." << endl;
 }
