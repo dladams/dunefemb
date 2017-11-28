@@ -17,6 +17,12 @@ public:
   using Index = DuneFembReader::Index;
   using ManMap = std::map<std::string, TPadManipulator>;
 
+  // Processing options.
+  //      OptNoCalib - Signal is ADC - pedestal
+  //  OptHeightCalib - Signal is calibrated by height
+  //    OptAreaCalib - Signal is calibrated by area
+  enum CalibOption { OptNoCalib, OptHeightCalib, OptAreaCalib };
+
   // Ctor from a FEMB sample set.
   // opt = 100*doDraw + option is the processing option:
   // option:
@@ -44,7 +50,11 @@ public:
   DuneFembReader* reader() const { return m_reader.get(); }
 
   // Return the parameters specifying the current sample.
-  int option() const { return m_opt; }
+  CalibOption option() const { return m_opt; }
+  std::string optionName() const;
+  bool isNoCalib() const { return option() == OptNoCalib; }
+  bool isHeightCalib() const { return option() == OptHeightCalib; }
+  bool isAreaCalib() const { return option() == OptAreaCalib; }
   bool doDraw() const { return m_doDraw; }
   int femb() const { return m_femb; }
   std::string tspat() const { return m_tspat; }
@@ -115,7 +125,7 @@ public:
 
 private:
 
-  int m_opt;
+  CalibOption m_opt;
   bool m_doDraw;
   int m_femb;
   std::string m_tspat;
@@ -128,6 +138,15 @@ private:
   std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;
+
+  // Parameters.
+  // These are deduced from the signal unit (ADC counts, ke, ...)
+  std::string m_signalUnit;
+  double m_dsigmin = 1000.0;      // Min signal unc in graphs used in gain fits (protect against stickcy codes)
+  double m_dsigflow = 1000.0;     // Signal unc for under/overflows in graphs used in gain fits
+  int m_sigDevHistBinCount = 10;  // bins in deviation histos
+  double m_sigDevHistMax = 1.0;   // Limit for deviation histos
+
 
 };
 

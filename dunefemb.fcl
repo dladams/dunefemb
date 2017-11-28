@@ -23,6 +23,9 @@ tools.adcThresholdSignalFinder.Threshold: 120
 tools.adcThresholdSignalFinder.BinsBefore:  7
 tools.adcThresholdSignalFinder.BinsAfter:  10
 
+tools.keThresholdSignalFinder: @local::tools.adcThresholdSignalFinder
+tools.keThresholdSignalFinder.Threshold: 15
+
 tools.fembCalibrator: {
   tool_type: FembMappedAdcModifier
   LogLevel: 1
