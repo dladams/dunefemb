@@ -55,6 +55,7 @@ public:
   bool isNoCalib() const { return option() == OptNoCalib; }
   bool isHeightCalib() const { return option() == OptHeightCalib; }
   bool isAreaCalib() const { return option() == OptAreaCalib; }
+  bool isCalib() { return isHeightCalib() || isAreaCalib(); }
   bool doDraw() const { return m_doDraw; }
   int femb() const { return m_femb; }
   std::string tspat() const { return m_tspat; }
@@ -97,6 +98,7 @@ public:
 
   // Process a channel.
   DataMap getChannelResponse(Index icha, std::string usePosFlag, bool useArea =true);
+  DataMap getChannelDeviations(Index icha);
   const DataMap& processChannel(Index icha);
 
   // Process all channels.

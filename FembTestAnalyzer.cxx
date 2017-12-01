@@ -338,7 +338,7 @@ processChannelEvent(Index icha, Index ievt) {
       if ( sigDevs[isgn].size() ) {
         string hnam = "hsigDev" + ssgn;
         string httl = "FEMB test signal deviation for event " + sevt + " " + ssgn +
-                      "; Signal [" + sigunit + "]; # signals";
+                      "; Signal deviation [" + sigunit + "]; # signals";
         float xmax = m_sigDevHistMax;
         float xmin = -xmax;
         float nbin = m_sigDevHistBinCount;
@@ -415,6 +415,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<float> dx(npt, 0.0);
   vector<float> y(npt, 0.0);
   vector<float> dy(npt, 0.0);
+  vector<float> dyFit(npt, 0.0);
   vector<float> fitPed(npt, 0.0);
   vector<bool> fitkeep(npt, true);
   double ymax = 1000.0;
@@ -457,23 +458,25 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
             if ( usePos ) iptPosGood = ipt;
             else          iptNegGood = ipt;
           }
-          float dsigmin = m_dsigmin;  // Intrinsic ADC uncertainty.
-          if ( isUnderOver ) dsigmin = m_dsigflow;  // Big uncertainty for under/overflows.
+          float dsigFitMin = m_dsigmin;  // Intrinsic ADC uncertainty.
+          if ( isUnderOver ) dsigFitMin = m_dsigflow;  // Big uncertainty for under/overflows.
           float sigsign = 1.0;
           if ( useBoth && !usePos ) sigsign = -1.0;
           float dsig = sigrms;
-          if ( dsig < dsigmin ) dsig = dsigmin;
+          float dsigFit = dsig;
+          if ( dsigFit < dsigFitMin ) dsigFit = dsigFitMin;
           x.push_back(sigsign*0.001*nele);
           dx.push_back(0.0);
           y.push_back(sigsign*sigmean);
           dy.push_back(dsig);
+          dyFit.push_back(dsigFit);
           fitPed.push_back(peds[ievt]);
           bool fitpt = true;
           if ( isUnderOver && !useBoth ) fitpt = false;
           if ( isUnderOver ) fitpt = false;
           if ( !pulseIsExternal && ievt < 2 ) fitpt = false;
           fitkeep.push_back(fitpt);
-          double ylim = y[ipt] + dy[ipt];
+          double ylim = y[ipt] + dyFit[ipt];
           if ( ylim > ymax ) ymax = ylim;
         } else {
           cout << myname << styp << " " << ssgn << " mean not found for channel "
@@ -488,6 +491,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<float> dxf;
   vector<float> yf;
   vector<float> dyf;
+  vector<float> dyfFit;
   vector<float> fitPedf;
   for ( Index ipt=0; ipt<npt; ++ipt ) {
     if ( fitkeep[ipt] ) {
@@ -495,6 +499,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       dxf.push_back(dx[ipt]);
       yf.push_back(y[ipt]);
       dyf.push_back(dy[ipt]);
+      dyfFit.push_back(dyFit[ipt]);
       fitPedf.push_back(fitPed[ipt]);
     }
   }
@@ -518,16 +523,28 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   string ylab = "Output signal [" + m_signalUnit + "]";
   pg->GetYaxis()->SetTitle(ylab.c_str());
   // Create graph with fitted points.
-  string gnamf = gnam + "Fit";
+  string gnamf = gnam + "FitPoints";
+  string gttlf = gttl + " (fit points)";
   TGraph* pgf = new TGraphErrors(nptf, &xf[0], &yf[0], &dxf[0], &dyf[0]);
   pgf->SetName(gnamf.c_str());
-  pgf->SetTitle(gttl.c_str());
+  pgf->SetTitle(gttlf.c_str());
   pgf->SetLineWidth(2);
   pgf->SetMarkerStyle(4);
-  pgf->SetMarkerColor(2);
   pgf->GetXaxis()->SetTitle("Input charge [ke]");
   pgf->GetXaxis()->SetLimits(-xmax, xmax);
   pgf->GetYaxis()->SetTitle(ylab.c_str());
+  // Create graph with fitted points and fit uncertainties.
+  string gnamfFit = gnam + "FitPointsUnc";
+  string gttlfFit = gttl + " (fit points, fit uncs)";
+  TGraph* pgfFit = new TGraphErrors(nptf, &xf[0], &yf[0], &dxf[0], &dyfFit[0]);
+  pgfFit->SetName(gnamfFit.c_str());
+  pgfFit->SetTitle(gttlfFit.c_str());
+  pgfFit->SetLineWidth(2);
+  pgfFit->SetMarkerStyle(4);
+  pgfFit->SetMarkerColor(2);
+  pgfFit->GetXaxis()->SetTitle("Input charge [ke]");
+  pgfFit->GetXaxis()->SetLimits(-xmax, xmax);
+  pgfFit->GetYaxis()->SetTitle(ylab.c_str());
   // Set starting values for fit.
   Index iptGain = nptf > 0 ? nptf - 1 : 0;
   if ( iptPosGood ) iptGain = iptPosGood;
@@ -621,7 +638,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     pfit->SetParLimits(0, 0.8*gain, 1.2*gain);
     Index npar = pfit->GetNpar();
     //pgf->Fit(pfit, "", "", xfmin, x[2]);
-    pgf->Fit(pfit, "Q");
+    pgfFit->Fit(pfit, "Q");
+    pgf->GetListOfFunctions()->Add(pfit);
     gain = pfit->GetParameter(0);
     if ( fitAdcMin ) adcmin = pfit->GetParameter(pfit->GetParNumber("adcmin"));
     if ( fitAdcMax ) adcmax = pfit->GetParameter(pfit->GetParNumber("adcmax"));
@@ -731,11 +749,14 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   pgr->SetName(gnamr.c_str());
   pgr->SetTitle(gttlr.c_str());
   pgr->SetLineWidth(2);
+  pgr->SetMarkerStyle(4);
   pgr->GetXaxis()->SetTitle("Input charge [ke]");
   pgr->GetXaxis()->SetLimits(-xmax, xmax);
   pgr->GetYaxis()->SetTitle("Output signal residual [ke]");
   // Create histograms of the RMS and abs(residual) of all fitted points
   // in the linear regions.
+  // Set flag for deviation histogram. We do this if calibration is applied
+  // and is of type useArea.
   string hnamBase = "hchaResp" + styp + usePosOpt;
   string httlBase = styp + " response ";
   string hylab = "# entries";
@@ -743,12 +764,13 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   string httlRms = httlBase + " local RMS channel " + scha + "; #DeltaQ [ke]; " + hylab;
   string hnamArs = hnamBase + "Ars";
   string httlArs = httlBase + "|residual| channel " + scha + "; #DeltaQ [ke]; " + hylab;
-  string hnamDev = hnamBase + "Dev";
-  string httlDev = httlBase + " global RMS channel " + scha + "; #DeltaQ [ke]; " + hylab;
+  string hnamGms = hnamBase + "Gms";
+  string httlGms = httlBase + " global RMS channel " + scha + "; #DeltaQ [ke]; " + hylab;
   TH1* phrms = new TH1F(hnamRms.c_str(), httlRms.c_str(), 50, 0, 5);
   TH1* phars = new TH1F(hnamArs.c_str(), httlArs.c_str(), 50, 0, 5);
-  TH1* phdev = new TH1F(hnamDev.c_str(), httlDev.c_str(), 50, 0, 5);
-  for ( TH1* ph : {phrms, phars, phdev} ) {
+  TH1* phgms = new TH1F(hnamGms.c_str(), httlGms.c_str(), 50, 0, 5);
+  vector<TH1*> rmsHists = {phrms, phars, phgms};
+  for ( TH1* ph : rmsHists ) {
     ph->SetStats(0);
     ph->SetLineWidth(2);
   }
@@ -757,17 +779,70 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   for ( Index ipt=0; ipt<xrese.size(); ++ipt ) {
     double yrms = dyrese[ipt];
     double yars = fabs(yrese[ipt]);
-    double ydev = sqrt(yrms*yrms + yars*yars);
+    double ygms = sqrt(yrms*yrms + yars*yars);
     phrms->Fill(yrms);
     phars->Fill(yars);
-    phdev->Fill(ydev);
+    phgms->Fill(ygms);
   }
   res.setGraph(gnam, pg);
   res.setGraph(gnamf, pgf);
+  res.setGraph(gnamfFit, pgfFit);
   res.setGraph(gnamr, pgr);
-  res.setHist(hnamRms, phrms, true);
-  res.setHist(hnamArs, phars, true);
-  res.setHist(hnamDev, phdev, true);
+  for ( TH1* ph : rmsHists ) res.setHist(ph->GetName(), ph, true);
+  return res;
+}
+
+//**********************************************************************
+
+DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
+  const string myname = "FembTestAnalyzer::getChannelDeviations: ";
+  ostringstream sscha;
+  sscha << icha;
+  string scha = sscha.str();
+  DataMap res;
+  res.setInt("channel", icha);
+  string hylab = "# entries";
+  string hnamDev = "hdev";
+  string httlDev = "Signal deviation channel " + scha + "; #DeltaQ [ke]; " + hylab;
+  string hnamAdv = "hadv";
+  string httlAdv = "Signal |deviation| channel " + scha + "; #DeltaQ [ke]; " + hylab;
+  TH1* phDev = new TH1F(hnamDev.c_str(), httlDev.c_str(), 200, -20, 20);
+  TH1* phAdv = new TH1F(hnamAdv.c_str(), httlAdv.c_str(), 50, 0, 5);
+  vector<TH1*> hists = {phDev, phAdv};
+  Index nevt = nEvent();
+  for ( Index ievt=0; ievt<nevt; ++ievt ) {
+    if ( chargeFc(ievt) == 0.0 ) continue;
+    const DataMap& resevt = processChannelEvent(icha, ievt);
+    for ( string ssgn : {"Neg", "Pos"} ) {
+      string devVecName = "roiSigDev" + ssgn;
+      string nUnderName = "sigNUnderflow" + ssgn;
+      string nOverName = "sigNOverflow" + ssgn;
+      vector<string> missing;
+      if ( ! resevt.haveFloatVector(devVecName) ) missing.push_back(devVecName);
+      if ( ! resevt.haveInt(nUnderName) ) missing.push_back(nUnderName);
+      if ( ! resevt.haveInt(nOverName) ) missing.push_back(nOverName);
+      if ( missing.size() ) {
+        cout << myname << "Event result is missing required " << ssgn
+             << " data for event " << ievt << ":" << endl;
+        for ( string name : missing ) cout << myname << "  " << name << endl;
+        continue;
+      }
+      int nUnder = resevt.getInt(nUnderName);
+      int nOver  = resevt.getInt(nOverName);
+      if ( nUnder ) continue;
+      if ( nOver ) continue;
+      const vector<float> devs = resevt.getFloatVector(devVecName);
+      for ( float dev : devs ) {
+        phDev->Fill(dev);
+        phAdv->Fill(fabs(dev));
+      }
+    }
+  }
+  for ( TH1* ph : hists ) {
+    ph->SetLineWidth(2);
+    ph->SetStats(0);
+    res.setHist(ph, true);  
+  }
   return res;
 }
 
@@ -786,6 +861,7 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
     res += getChannelResponse(icha, "Pos", false);
     res += getChannelResponse(icha, "Neg", false);
   }
+  if ( isCalib() ) res += getChannelDeviations(icha);
   // Create pedestal graph.
   const DataMap::FloatVector& nkes = res.getFloatVector("nkes");
   const DataMap::FloatVector& peds = res.getFloatVector("peds");
@@ -847,10 +923,10 @@ const DataMap& FembTestAnalyzer::processAll() {
       // Deviation histograms.
       string hnamRms = "hall" + sarea + spos + "Rms";
       string hnamArs = "hall" + sarea + spos + "Ars";
-      string hnamDev = "hall" + sarea + spos + "Dev";
+      string hnamGms = "hall" + sarea + spos + "Gms";
       TH1* phRms = nullptr;
       TH1* phArs = nullptr;
-      TH1* phDev = nullptr;
+      TH1* phGms = nullptr;
       // Histogram saturation for negative pulse height.
       if ( !useArea ) {
         hnam = "hsatMin" + sarea + spos;
@@ -885,10 +961,10 @@ cout << myname << "Channel " << ich << endl;
         // Fill deviation histos.
         string hnamChaRms = "hchaResp" + sarea + spos + "Rms";
         string hnamChaArs = "hchaResp" + sarea + spos + "Ars";
-        string hnamChaDev = "hchaResp" + sarea + spos + "Dev";
+        string hnamChaGms = "hchaResp" + sarea + spos + "Gms";
         TH1* pheRms = resc.getHist(hnamChaRms);
         TH1* pheArs = resc.getHist(hnamChaArs);
-        TH1* pheDev = resc.getHist(hnamChaDev);
+        TH1* pheGms = resc.getHist(hnamChaGms);
         if ( phRms == nullptr && pheRms != nullptr ) {
           phRms = dynamic_cast<TH1*>(pheRms->Clone(hnamRms.c_str()));
           string httl = sarea + " " + spos + " local RMS";
@@ -903,17 +979,17 @@ cout << myname << "Channel " << ich << endl;
         } else {
           phArs->Add(pheArs);
         }
-        if ( phDev == nullptr && pheDev != nullptr ) {
-          phDev = dynamic_cast<TH1*>(pheDev->Clone(hnamDev.c_str()));
+        if ( phGms == nullptr && pheGms != nullptr ) {
+          phGms = dynamic_cast<TH1*>(pheGms->Clone(hnamGms.c_str()));
           string httl = sarea + " " + spos + " global RMS";
-          phDev->SetTitle(httl.c_str());
+          phGms->SetTitle(httl.c_str());
         } else {
-          phDev->Add(pheDev);
+          phGms->Add(pheGms);
         }
       }
       hists[hnamRms] = phRms;
       hists[hnamArs] = phArs;
-      hists[hnamDev] = phDev;
+      hists[hnamGms] = phGms;
     }
   }
   // Pedestal histogram.
@@ -1095,14 +1171,16 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
     cout << myname << "          draw(\"ped\", ich) - Pedestal vs. Qin for channel ich" << endl;
     cout << myname << "               draw(\"ped\") - Pedestal vs. channel" << endl;
     cout << myname << "            draw(\"pedlim\") - Pedestal vs. channel with ADC ranges" << endl;
-    cout << myname << "              draw(\"devh\") - Height deviations." << endl;
-    cout << myname << "              draw(\"deva\") - Height deviations." << endl;
+    cout << myname << "              draw(\"rmsh\") - Height deviations." << endl;
+    cout << myname << "              draw(\"rmsa\") - Height deviations." << endl;
     cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
     cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
     cout << myname << "        draw(\"resph\", ich) - ADC height vs. Qin for channel ich" << endl;
     cout << myname << "        draw(\"respa\", ich) - ADC area vs. Qin for channel ich" << endl;
     cout << myname << "     draw(\"respresh\", ich) - ADC height residual vs. Qin for channel ich" << endl;
     cout << myname << "     draw(\"respresa\", ich) - ADC area residual vs. Qin for channel ich" << endl;
+    cout << myname << "          draw(\"dev\", ich) - ADC calibration deviations for channel ich" << endl;
+    cout << myname << "          draw(\"adv\", ich) - ADC calibration deviation magintudes for channel ich" << endl;
     cout << myname << "  draw(\"resphp\", ich, iev) - ADC positive height distribution for channel ich event iev" << endl;
     cout << myname << "  draw(\"resphn\", ich, iev) - ADC negative height distribution for channel ich event iev" << endl;
     cout << myname << "  draw(\"respap\", ich, iev) - ADC positive area distribution for channel ich event iev" << endl;
@@ -1204,10 +1282,18 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         return draw(&man);
       }
     // Deviations.
-    } else if ( sopt == "devh" || sopt == "deva" ) {
-      string hnamdev = sopt == "devh" ? "hallHeightBothDev" : "hallAreaBothDev";
-      string hnamrms = sopt == "devh" ? "hallHeightBothRms" : "hallAreaBothRms";
-      string hnamars = sopt == "devh" ? "hallHeightBothArs" : "hallAreaBothArs";
+    } else if ( sopt == "rmsh" || sopt == "rmsa" ) {
+      string hnamdev = sopt == "rmsh" ? "hallHeightBothGms" : "hallAreaBothGms";
+      string hnamrms = sopt == "rmsh" ? "hallHeightBothRms" : "hallAreaBothRms";
+      string hnamars = sopt == "rmsh" ? "hallHeightBothArs" : "hallAreaBothArs";
+      vector<string> missing;
+      for ( string name : {hnamdev, hnamrms, hnamars} )
+        if ( ! processAll().haveHist(name) ) missing.push_back(name);
+      if ( missing.size() ) {
+        cout << myname << "Unable to find histogram" << ( missing.size() ==1 ? "" : "s") << ":" << endl;
+        for ( string name : missing ) cout << myname << "  " << name << endl;
+        return nullptr;
+      }
       TH1* phdev = processAll().getHist(hnamdev);
       TH1* phrms = processAll().getHist(hnamrms);
       TH1* phars = processAll().getHist(hnamars);
@@ -1240,7 +1326,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       pleg->AddEntry(phdev, ssdev.str().c_str(), "l");
       // Set title.
       ostringstream ssttl;
-      ssttl << (sopt == "devh" ? "Height" : "Area");
+      ssttl << (sopt == "rmsh" ? "Height" : "Area");
       ssttl << " deviations for FEMB " << femb();
       man.hist()->SetTitle(ssttl.str().c_str());
       return draw(&man);
@@ -1279,8 +1365,8 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         return draw(&man);
       }
     } else if ( sopt == "resph" || 
-           sopt == "respa" ||
-           sopt == "respresh" ||
+                sopt == "respa" ||
+                sopt == "respresh" ||
                 sopt == "respresa" ) {
       vector<string> gnams;
       double ymin = -1500;
@@ -1289,9 +1375,9 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         ymin = -200;
         ymax = 400;
       }
-      if ( sopt == "resph" ) gnams = {"gchaRespHeightBothFit", "gchaRespHeightBoth"};
+      if ( sopt == "resph" ) gnams = {"gchaRespHeightBothFitPointsUnc", "gchaRespHeightBothFitPointsUnc"};
       if ( sopt == "respa" ) {
-        gnams = {"gchaRespAreaBothFit", "gchaRespAreaBoth"};
+        gnams = {"gchaRespAreaBothFitPointsUnc", "gchaRespAreaBoth"};
         if ( isNoCalib() ) {
           ymin = -15000;
           ymax = 25000;
@@ -1332,6 +1418,26 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         man.addVerticalLine();
         return draw(&man);
       }
+    } else if ( sopt == "dev" || 
+                sopt == "adv" ) {
+      if ( ! isCalib() ) {
+        cout << myname << "Drawing " << sopt << " is only available for calibrated samples." << endl;
+        return nullptr;
+      }
+      const DataMap& res = processChannel(icha);
+      string hnam = "h" + sopt;
+      if ( ! res.haveHist(hnam) ) {
+        cout << myname << "Unable to find histogram " << hnam << " for channel " << icha << "." << endl;
+        return nullptr;
+      }
+      TH1* ph = res.getHist(hnam);
+      man.add(ph, "");
+      man.showUnderflow();
+      man.showOverflow();
+      if ( sopt == "dev" ) {
+        man.setRangeX(-5.0, 5.0);
+      }
+      return draw(&man);
     }
   // Plots for event ievt in channel icha
   } else if ( icha >= 0 && ievt >= 0 ) {
@@ -1394,6 +1500,9 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       TH1* ph = res.getHist(hname);
       if ( ph != nullptr ) {
         man.add(ph, "");
+        man.setRangeX(-5, 5);
+        man.showUnderflow();
+        man.showOverflow();
         return draw(&man);
       }
     }
@@ -1417,16 +1526,20 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc, int ievt) {
   int wy = gROOT->IsBatch() ? 2000 : 1000;
   man.setCanvasSize(1.4*wy, wy);
   man.split(4);
+  bool doDrawSave = doDraw();
+  setDoDraw(false);
   for ( Index kcha=0; kcha<16; ++kcha ) {
     Index icha = 16*iadc + kcha;
     TPadManipulator* pman = draw(sopt, icha, ievt);
     if ( pman == nullptr ) {
       cout << myname << "Unable to find plot " << sopt << " for channel " << icha << endl;
       m_mans.erase(mnam);
+      setDoDraw(doDrawSave);
       return nullptr;
     }
     *man.man(kcha) = *pman;
   }
+  setDoDraw(doDrawSave);
   return draw(&man);
 }
 
