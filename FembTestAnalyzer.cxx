@@ -118,6 +118,15 @@ string FembTestAnalyzer::optionName() const {
 
 //**********************************************************************
 
+string FembTestAnalyzer::calibName(bool capitalize) const {
+  if ( isNoCalib()     ) return capitalize ? "Uncalibrated" : "uncalibrated";
+  if ( isHeightCalib() ) return capitalize ? "Height" : "height";
+  if ( isAreaCalib()   ) return capitalize ? "Area" : "area";
+  return "UnknownCalibration";
+}
+
+//**********************************************************************
+
 double FembTestAnalyzer::chargeFc(Index ievt) {
   const DuneFembReader* prdr = reader();
   if ( prdr == nullptr ) return 0.0;
@@ -337,8 +346,8 @@ processChannelEvent(Index icha, Index ievt) {
       // Build the deviation histogram. Record it and its mean and RMS.
       if ( sigDevs[isgn].size() ) {
         string hnam = "hsigDev" + ssgn;
-        string httl = "FEMB test signal deviation for event " + sevt + " " + ssgn +
-                      "; Signal deviation [" + sigunit + "]; # signals";
+        string httl = calibName(true) + " deviation for event " + sevt + " " + ssgn +
+                      "; #DeltaQ [" + sigunit + "]; # signals";
         float xmax = m_sigDevHistMax;
         float xmin = -xmax;
         float nbin = m_sigDevHistBinCount;
@@ -803,7 +812,7 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
   res.setInt("channel", icha);
   string hylab = "# entries";
   string hnamDev = "hdev";
-  string httlDev = "Signal deviation channel " + scha + "; #DeltaQ [ke]; " + hylab;
+  string httlDev = calibName(true) + " deviation channel " + scha + "; #DeltaQ [ke]; " + hylab;
   string hnamAdv = "hadv";
   string httlAdv = "Signal |deviation| channel " + scha + "; #DeltaQ [ke]; " + hylab;
   TH1* phDev = new TH1F(hnamDev.c_str(), httlDev.c_str(), 200, -20, 20);
@@ -1100,8 +1109,8 @@ cout << myname << "Channel " << icha << endl;
           ph->Reset();
         }
       }
-      string sttlDev = "Signal deviation for FEMB " + sfemb;
-      string sttlAdv = "Signal deviation magnitude for FEMB " + sfemb;
+      string sttlDev = calibName(true) + " deviation for FEMB " + sfemb;
+      string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
       phdev->SetTitle(sttlDev.c_str());
       phadv->SetTitle(sttlAdv.c_str());
       phdev->Add(phdevCha);

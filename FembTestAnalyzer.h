@@ -56,6 +56,7 @@ public:
   bool isHeightCalib() const { return option() == OptHeightCalib; }
   bool isAreaCalib() const { return option() == OptAreaCalib; }
   bool isCalib() { return isHeightCalib() || isAreaCalib(); }
+  string calibName(bool capitalize =false) const;
   bool doDraw() const { return m_doDraw; }
   int femb() const { return m_femb; }
   std::string tspat() const { return m_tspat; }
