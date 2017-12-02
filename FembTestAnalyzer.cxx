@@ -897,8 +897,8 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
 const DataMap& FembTestAnalyzer::processAll() {
   const string myname = "FembTestAnalyzer::processAll: ";
   if ( allResult.haveInt("ncha") ) return allResult;
-  Index nch = nChannel();
-  allResult.setInt("ncha", nch);
+  Index ncha = nChannel();
+  allResult.setInt("ncha", ncha);
   map<string,TH1*> hists;
   // Histograms for area/height and pos/neg combos.
   TH1* phsatMin = nullptr;
@@ -918,7 +918,7 @@ const DataMap& FembTestAnalyzer::processAll() {
     for ( string spos : posValues ) {
       string hnam = "hgain" + sarea + spos;
       string httl = sarea + " " + spos + " Gain; Channel; Gain [ADC/ke]";
-      TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
+      TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
       hists[hnam] = phg;
       // Deviation histograms.
       string hnamRms = "hall" + sarea + spos + "Rms";
@@ -931,31 +931,31 @@ const DataMap& FembTestAnalyzer::processAll() {
       if ( !useArea ) {
         hnam = "hsatMin" + sarea + spos;
         httl = sarea + " " + spos + " Lower saturation level; Channel; Saturation level [ADC]";
-        phsatMin = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
+        phsatMin = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
         hists[hnam] = phsatMin;
         hnam = "hsatMax" + sarea + spos;
         httl = sarea + " " + spos + " Upper saturation level; Channel; Saturation level [ADC]";
-        phsatMax = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
+        phsatMax = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
         hists[hnam] = phsatMax;
       }
       // Loop over channels.
-      for ( Index ich=0; ich<nch; ++ich ) {
-cout << myname << "Channel " << ich << endl;
+      for ( Index icha=0; icha<ncha; ++icha ) {
+cout << myname << "Channel " << icha << endl;
         string fnam = "fitGain" + sarea + spos;
         string fenam = fnam + "Unc";
-        const DataMap& resc = processChannel(ich);
-        phg->SetBinContent(ich+1, resc.getFloat(fnam));
-        phg->SetBinError(ich+1, resc.getFloat(fenam));
+        const DataMap& resc = processChannel(icha);
+        phg->SetBinContent(icha+1, resc.getFloat(fnam));
+        phg->SetBinError(icha+1, resc.getFloat(fenam));
         if ( phsatMin != nullptr ) {
           fnam = "fitSaturationMinHeight" + spos;
           if ( resc.haveFloat(fnam) ) {
-            phsatMin->SetBinContent(ich+1, resc.getFloat(fnam));
+            phsatMin->SetBinContent(icha+1, resc.getFloat(fnam));
           }
         }
         if ( phsatMax != nullptr ) {
           fnam = "fitSaturationMaxHeight" + spos;
           if ( resc.haveFloat(fnam) ) {
-            phsatMax->SetBinContent(ich+1, resc.getFloat(fnam));
+            phsatMax->SetBinContent(icha+1, resc.getFloat(fnam));
           }
         }
         // Fill deviation histos.
@@ -998,15 +998,15 @@ cout << myname << "Channel " << ich << endl;
   ssfemb << femb();
   string sfemb = ssfemb.str();
   string httl = "Pedestals for FEMB " + sfemb + "; Channel; Pedestal [ADC]";
-  TH1* php = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
-  for ( Index ich=0; ich<nch; ++ich ) {
-    const DataMap& resc = processChannel(ich);
+  TH1* php = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+  for ( Index icha=0; icha<ncha; ++icha ) {
+    const DataMap& resc = processChannel(icha);
     double ymin = resc.getFloat("pedMin");
     double ymax = resc.getFloat("pedMax");
     double y = 0.5*(ymin + ymax);
     double dy = 0.5*(ymax - ymin);
-    php->SetBinContent(ich+1, y);
-    php->SetBinError(ich+1, dy);
+    php->SetBinContent(icha+1, y);
+    php->SetBinError(icha+1, dy);
   }
   hists[hnam] = php;
   // Underflow histogram.
@@ -1017,23 +1017,23 @@ cout << myname << "Channel " << ich << endl;
   if ( phsatMin == nullptr ) {
     phu = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
   } else {
-    phu = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
+    phu = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
     double addfac = useBoth ? 1.0 : -1.0;
-    for ( Index ich=0; ich<nch; ++ich ) {
+    for ( Index icha=0; icha<ncha; ++icha ) {
       double val = 0.0;
       double dval = 0.0;
-      double satmin = phsatMin->GetBinContent(ich+1);
+      double satmin = phsatMin->GetBinContent(icha+1);
       if ( satmin ) {
-        double ped = php->GetBinContent(ich+1);
-        double dped = php->GetBinError(ich+1);
+        double ped = php->GetBinContent(icha+1);
+        double dped = php->GetBinError(icha+1);
         double satval = ped + addfac*satmin;
         if ( satval > val ) {
           val = satval;
           dval = dped;
         }
       }
-      phu->SetBinContent(ich+1, val);
-      phu->SetBinError(ich+1, dval);
+      phu->SetBinContent(icha+1, val);
+      phu->SetBinError(icha+1, dval);
     }
   }
   if ( phu != nullptr ) {
@@ -1051,22 +1051,22 @@ cout << myname << "Channel " << ich << endl;
   if ( phsatMax == nullptr ) {
     pho = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
   } else {
-    pho = new TH1F(hnam.c_str(), httl.c_str(), nch, 0, nch);
-    for ( Index ich=0; ich<nch; ++ich ) {
+    pho = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+    for ( Index icha=0; icha<ncha; ++icha ) {
       double val = 4096;
       double dval = 0.0;
-      double satmax = phsatMax->GetBinContent(ich+1);
+      double satmax = phsatMax->GetBinContent(icha+1);
       if ( satmax ) {
-        double ped = php->GetBinContent(ich+1);
-        double dped = php->GetBinError(ich+1);
+        double ped = php->GetBinContent(icha+1);
+        double dped = php->GetBinError(icha+1);
         double satval = ped + satmax;
         if ( satval < val ) {
           val = satval;
           dval = dped;
         }
       }
-      pho->SetBinContent(ich+1, val);
-      pho->SetBinError(ich+1, dval);
+      pho->SetBinContent(icha+1, val);
+      pho->SetBinError(icha+1, dval);
     }
   }
   if ( pho != nullptr ) {
@@ -1075,6 +1075,40 @@ cout << myname << "Channel " << ich << endl;
     pho->SetMarkerColor(icol);
     pho->SetFillColor(icol);
     hists[hnam] = pho;
+  }
+  // Signal deviation histograms.
+  if ( isCalib() ) {
+    TH1* phdev = nullptr;
+    TH1* phadv = nullptr;
+    for ( Index icha=0; icha<ncha; ++icha ) {
+      const DataMap& resevt = processChannel(icha);
+      for ( string hnam : {"hdev", "hadv"} ) {
+        if ( ! resevt.haveHist(hnam) ) {
+          cout << myname << "Result for channel " << icha << " does not have histogram "
+               << hnam << endl;
+          continue;
+        }
+      }
+      TH1* phdevCha = resevt.getHist("hdev");
+      TH1* phadvCha = resevt.getHist("hadv");
+      if ( phdev == nullptr ) {
+        phdev = dynamic_cast<TH1*>(phdevCha->Clone("hdev"));
+        phadv = dynamic_cast<TH1*>(phadvCha->Clone("hadv"));
+        for ( TH1* ph : {phdev, phadv} ) {
+          ph->SetDirectory(nullptr);
+          ph->SetLineWidth(2);
+          ph->Reset();
+        }
+      }
+      string sttlDev = "Signal deviation for FEMB " + sfemb;
+      string sttlAdv = "Signal deviation magnitude for FEMB " + sfemb;
+      phdev->SetTitle(sttlDev.c_str());
+      phadv->SetTitle(sttlAdv.c_str());
+      phdev->Add(phdevCha);
+      phadv->Add(phadvCha);
+    }
+    allResult.setHist(phdev, true);
+    allResult.setHist(phadv, true);
   }
   // Record histograms.
   for ( auto ient : hists ) {
@@ -1175,12 +1209,14 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
     cout << myname << "              draw(\"rmsa\") - Height deviations." << endl;
     cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
     cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
+    cout << myname << "               draw(\"dev\") - ADC calibration deviations" << endl;
+    cout << myname << "               draw(\"adv\") - ADC calibration deviation magnitudes" << endl;
     cout << myname << "        draw(\"resph\", ich) - ADC height vs. Qin for channel ich" << endl;
     cout << myname << "        draw(\"respa\", ich) - ADC area vs. Qin for channel ich" << endl;
     cout << myname << "     draw(\"respresh\", ich) - ADC height residual vs. Qin for channel ich" << endl;
     cout << myname << "     draw(\"respresa\", ich) - ADC area residual vs. Qin for channel ich" << endl;
     cout << myname << "          draw(\"dev\", ich) - ADC calibration deviations for channel ich" << endl;
-    cout << myname << "          draw(\"adv\", ich) - ADC calibration deviation magintudes for channel ich" << endl;
+    cout << myname << "          draw(\"adv\", ich) - ADC calibration deviation magnitudes for channel ich" << endl;
     cout << myname << "  draw(\"resphp\", ich, iev) - ADC positive height distribution for channel ich event iev" << endl;
     cout << myname << "  draw(\"resphn\", ich, iev) - ADC negative height distribution for channel ich event iev" << endl;
     cout << myname << "  draw(\"respap\", ich, iev) - ADC positive area distribution for channel ich event iev" << endl;
@@ -1329,6 +1365,18 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       ssttl << (sopt == "rmsh" ? "Height" : "Area");
       ssttl << " deviations for FEMB " << femb();
       man.hist()->SetTitle(ssttl.str().c_str());
+      return draw(&man);
+    } else if ( sopt == "dev" || sopt == "adv" ) {
+      string hnam = "h" + sopt;
+      TH1* ph = processAll().getHist(hnam);
+      if ( ph == nullptr ) {
+        cout << myname << "Unable to find histogram" << hnam << ". " << endl;
+        return nullptr;
+      }
+      man.add(ph);
+      if ( sopt == "dev" ) man.setRangeX(-5.0, 5.0);
+      man.showUnderflow();
+      man.showOverflow();
       return draw(&man);
     }
   // Plots for channel icha
