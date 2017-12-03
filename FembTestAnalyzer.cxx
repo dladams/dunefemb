@@ -268,6 +268,7 @@ processChannelEvent(Index icha, Index ievt) {
     // Also count the number of ROIs with under and overflow bins.
     // All are done separately for each sign.
     float expSig = 0.001*pulseQe;
+    vector<bool> roiIsPos(nroi, false);
     for ( Index iroi=iroi1; iroi<iroi2; ++iroi ) {
       float area = resmod.getFloatVector("roiSigAreas")[iroi];
       float sigmin = resmod.getFloatVector("roiSigMins")[iroi];
@@ -275,6 +276,7 @@ processChannelEvent(Index icha, Index ievt) {
       int nundr = resmod.getIntVector("roiNUnderflows")[iroi];
       int nover = resmod.getIntVector("roiNOverflows")[iroi];
       Index isPos = area >= 0.0;
+      roiIsPos[iroi] = isPos;
       float sign = isPos ? 1.0 : -1.0;
       area *= sign;
       float height = isPos ? sigmax : -sigmin;
@@ -296,7 +298,9 @@ processChannelEvent(Index icha, Index ievt) {
       // Build area histogram. Record it and its mean and RMS.
       if ( sigAreas[isgn].size() ) {
         string hnam = "hsigArea" + ssgn;
-        string httl = "FEMB test signal area " + ssgn + "; " + sigunit + "; # signals";
+        string httl = "FEMB test signal area " + ssgn +
+                      " channel " + scha + " event " + sevt +
+                      "; " + sigunit + "; # signals";
         float xmin = areaMin[isgn];
         float xmax = areaMax[isgn];
         float xavg = 0.5*(xmin + xmax);
@@ -321,7 +325,9 @@ processChannelEvent(Index icha, Index ievt) {
       // Build height histogram. Record it and its mean and RMS.
       if ( sigHeights[isgn].size() ) {
         string hnam = "hsigHeight" + ssgn;
-        string httl = "FEMB test signal height " + ssgn + "; " + sigunit + "; # signals";
+        string httl = "FEMB test signal height " + ssgn +
+                      " channel " + scha + " event " + sevt +
+                      "; " + sigunit + "; # signals";
         float xmin = heightMin[isgn];
         float xmax = heightMax[isgn];
         float xavg = 0.5*(xmin + xmax);
@@ -361,6 +367,42 @@ processChannelEvent(Index icha, Index ievt) {
         res.setFloat(meanName, ph->GetMean());
         res.setFloat(rmsName, ph->GetRMS());
       }
+      // Evaluate the sticky-code metrics.
+      //    S1 = fraction of codes in most populated bin
+      //    S2 = fraction of codes with classic sticky values
+      if ( sigHeights[isgn].size() ) {
+        string vecname = isgn ? "roiTickMaxs" : "roiTickMins";
+        const DataMap::IntVector& roiTicks = resmod.getIntVector(vecname);
+        const DataMap::IntVector& roiTick0s = resmod.getIntVector("roiTick0s");
+        map<AdcIndex, Index> adcCounts;   // map of counts for each ADC code
+        for ( Index iroi=iroi1; iroi<iroi2; ++iroi ) {
+          if ( roiIsPos[iroi] != isgn ) continue;
+          Index tick = roiTicks[iroi] + roiTick0s[iroi];
+          AdcCount adcCode = acd.raw[tick];
+cout << "ADC" << "[" << tick << "]: " << adcCode << endl;
+          if ( adcCounts.find(adcCode) == adcCounts.end() ) adcCounts[adcCode] = 0;
+          adcCounts[adcCode] += 1;
+        }
+        Index maxCount = 0;
+        Index sumCount = 0;
+        Index stickyCount = 0;
+        for ( auto ent : adcCounts ) {
+          const AdcIndex adcCode = ent.first;
+          const Index count = ent.second;
+          if ( count > maxCount ) maxCount = count;
+          sumCount += count;
+          const AdcIndex adcCodeMod = adcCode%64;
+          if ( adcCodeMod == 0 || adcCodeMod == 63 ) stickyCount += count;
+        }
+cout << "Counts" << endl;
+cout << maxCount << endl;
+cout << stickyCount << endl;
+cout << sumCount << endl;
+        float s1 = sumCount > 0 ? float(maxCount)/float(sumCount) : -1.0;
+        float s2 = sumCount > 0 ? float(stickyCount)/float(sumCount) : -1.0;
+        res.setFloat("stickyFraction1" + ssgn, s1);
+        res.setFloat("stickyFraction2" + ssgn, s2);
+      }
       // Record the # of ROIS with underflow and overflow bins.
       string unam = "sigNUnderflow" + ssgn;
       string onam = "sigNOverflow" + ssgn;
@@ -371,7 +413,7 @@ processChannelEvent(Index icha, Index ievt) {
         string varname = "roiSigDev" + ssgn;
         res.setFloatVector(varname, sigDevs[isgn]);
       }
-    }
+    }  // End loop over isgn
   } else if ( haverois ) {
     if ( ievt > 1 ) cout << myname << "ERROR: No ROIs found for channel " << icha
                          << " event " << ievt << "." << endl;
@@ -426,6 +468,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<float> dy(npt, 0.0);
   vector<float> dyFit(npt, 0.0);
   vector<float> fitPed(npt, 0.0);
+  vector<float> sticky1[2];
+  vector<float> sticky2[2];
   vector<bool> fitkeep(npt, true);
   double ymax = 1000.0;
   vector<float> peds(nevt, 0.0);
@@ -453,6 +497,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
         string rmsName = "sig" + styp + "Rms" + ssgn;
         string ovrName = "sigNOverflow" + ssgn;
         string udrName = "sigNUnderflow" + ssgn;
+        string sticky1Name = "stickyFraction1" + ssgn;
+        string sticky2Name = "stickyFraction2" + ssgn;
         Index ipt = x.size();
         int nudr = resevt.getInt(udrName);
         int novr = resevt.getInt(ovrName);   // # ROI with ADC overflows
@@ -492,6 +538,21 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
                << icha << " event " << ievt << ". ROI count is " << roiCount
                << ". Point skipped." << endl;
         }
+        if ( resevt.haveFloat(sticky1Name) ) {
+          sticky1[usePos].push_back(resevt.getFloat(sticky1Name));
+        } else {
+          sticky1[usePos].push_back(-2.0);
+        }
+        if ( resevt.haveFloat(sticky2Name) ) {
+          sticky2[usePos].push_back(resevt.getFloat(sticky2Name));
+        } else {
+          sticky2[usePos].push_back(-2.0);
+        }
+      }
+    } else {
+      for ( bool usePos : usePosValues ) {
+        sticky1[usePos].push_back(-3.0);
+        sticky2[usePos].push_back(-3.0);
       }
     }
   }
@@ -517,6 +578,11 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   res.setInt("channel", icha);
   res.setFloatVector("peds", peds);
   res.setFloatVector("nkes", nkeles);
+  for ( bool usePos : usePosValues ) {
+    string ssgn = usePos ? "Pos" : "Neg";
+    res.setFloatVector("sticky1" + ssgn + "s", sticky1[usePos]);
+    res.setFloatVector("sticky2" + ssgn + "s", sticky2[usePos]);
+  }
   httl = "Response " + styp + usePosLab + "; Charge [ke]; Mean ADC " + styp;
   string gnam = "gchaResp" + styp + usePosOpt;
   // Create graph with all points.
