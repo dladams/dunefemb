@@ -3,6 +3,7 @@
 #include "DuneFembFinder.h"
 #include "DuneFembReader.h"
 #include "dunesupport/FileDirectory.h"
+#include "TSystem.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -25,10 +26,10 @@ using FileMap = FileDirectory::FileMap;
 
 //**********************************************************************
 
-DuneFembFinder::DuneFembFinder(string topdir)
-: m_topdir(topdir) {
+DuneFembFinder::DuneFembFinder(string a_topdir)
+: m_topdir(gSystem->ExpandPathName(a_topdir.c_str())) {
   const string myname = "DuneFembFinder::ctor: ";
-  string ifname = topdir + "/" + "fembjson.dat";
+  string ifname = topdir() + "/" + "fembjson.dat";
   ifstream fin(ifname);
   if ( ! fin ) {
     cout << myname << "Unable to find FEMB run map at" << endl;
@@ -119,7 +120,7 @@ DuneFembFinder::DuneFembFinder(string topdir)
 
 RdrPtr DuneFembFinder::find(string dir, string fpat) {
   const string myname = "DuneFembFinder::find: ";
-  string dsdir = m_topdir + "/" + dir;
+  string dsdir = topdir() + "/" + dir;
   FileDirectory ftopdir(dsdir);
   FileMap dsfiles = ftopdir.find(fpat);
   if ( dsfiles.size() == 0 ) {

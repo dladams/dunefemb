@@ -53,16 +53,16 @@ FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_i
     cout << myname << "Unable to retrieve tool manager." << endl;
     return;
   }
-  vector<string> acdModifierNames = {"adcPedestalFit"};
+  adcModifierNames.push_back("adcPedestalFit");
   if ( isNoCalib() ) {
-    acdModifierNames.push_back("adcSampleFiller");
-    acdModifierNames.push_back("adcThresholdSignalFinder");
+    adcModifierNames.push_back("adcSampleFiller");
+    adcModifierNames.push_back("adcThresholdSignalFinder");
   }
   if ( isHeightCalib() ) {
-     acdModifierNames.push_back("fembCalibrator");
-     acdModifierNames.push_back("keThresholdSignalFinder");
+     adcModifierNames.push_back("fembCalibrator");
+     adcModifierNames.push_back("keThresholdSignalFinder");
   }
-  for ( string modname : acdModifierNames ) {
+  for ( string modname : adcModifierNames ) {
     auto pmod = ptm->getPrivate<AdcChannelDataModifier>(modname);
     if ( ! pmod ) {
       cout << myname << "Unable to find modifier " << modname << endl;
@@ -191,10 +191,24 @@ processChannelEvent(Index icha, Index ievt) {
   // Process the data.
   DataMap resmod;
   if ( dbg > 2 ) cout << myname << "Applying modifiers." << endl;
+  Index imod = 0;
   for ( const std::unique_ptr<AdcChannelDataModifier>& pmod : adcModifiers ) {
+    string modName = adcModifierNames[imod];
+   if ( dbg > 2 ) cout << "Applying modifier " << modName << endl;
     resmod += pmod->update(acd);
+    if ( resmod.status() ) {
+      cout << myname << "Modifier " << modName << " returned error "
+           << resmod.status() << endl;
+      return res.setStatus(2);
+    }
+    ++imod;
   }
-  if ( dbg > 3 ) resmod.print();
+  if ( dbg > 3 ) {
+    cout << myname << "Result:" << endl;
+    cout << myname << "----------------------------------" << endl;
+    resmod.print();
+    cout << myname << "----------------------------------" << endl;
+  }
   if ( dbg > 2 ) cout << myname << "Applying viewers." << endl;
   for ( const std::unique_ptr<AdcChannelViewer>& pvwr : adcViewers ) {
     resmod += pvwr->view(acd);
@@ -379,7 +393,6 @@ processChannelEvent(Index icha, Index ievt) {
           if ( roiIsPos[iroi] != isgn ) continue;
           Index tick = roiTicks[iroi] + roiTick0s[iroi];
           AdcCount adcCode = acd.raw[tick];
-cout << "ADC" << "[" << tick << "]: " << adcCode << endl;
           if ( adcCounts.find(adcCode) == adcCounts.end() ) adcCounts[adcCode] = 0;
           adcCounts[adcCode] += 1;
         }
@@ -394,10 +407,6 @@ cout << "ADC" << "[" << tick << "]: " << adcCode << endl;
           const AdcIndex adcCodeMod = adcCode%64;
           if ( adcCodeMod == 0 || adcCodeMod == 63 ) stickyCount += count;
         }
-cout << "Counts" << endl;
-cout << maxCount << endl;
-cout << stickyCount << endl;
-cout << sumCount << endl;
         float s1 = sumCount > 0 ? float(maxCount)/float(sumCount) : -1.0;
         float s2 = sumCount > 0 ? float(stickyCount)/float(sumCount) : -1.0;
         res.setFloat("stickyFraction1" + ssgn, s1);
@@ -1442,10 +1451,14 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       man.hist()->SetTitle(ssttl.str().c_str());
       return draw(&man);
     } else if ( sopt == "dev" || sopt == "adv" ) {
+      if ( ! isCalib() ) {
+        cout << myname << "Drawing " << sopt << " is only available for calibrated samples." << endl;
+        return nullptr;
+      }
       string hnam = "h" + sopt;
       TH1* ph = processAll().getHist(hnam);
       if ( ph == nullptr ) {
-        cout << myname << "Unable to find histogram" << hnam << ". " << endl;
+        cout << myname << "Unable to find histogram " << hnam << ". " << endl;
         return nullptr;
       }
       man.add(ph);

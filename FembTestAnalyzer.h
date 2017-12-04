@@ -138,6 +138,7 @@ private:
   bool m_extPulse;
   bool m_extClock;
   std::unique_ptr<DuneFembReader> m_reader;
+  std::vector<std::string> adcModifierNames;
   std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;

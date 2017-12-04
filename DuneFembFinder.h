@@ -27,7 +27,7 @@ public:
   using RdrPtr = std::unique_ptr<DuneFembReader>;
 
   // Ctor from topdir (where data is stored).
-  explicit DuneFembFinder(std::string topdir ="/home/dladams/data/dune/femb");
+  explicit DuneFembFinder(std::string a_topdir ="~/data/dune/femb");
 
   // Find a sample specified by directory and file pattern in topdir.
   RdrPtr find(std::string dir, std::string fpat ="");
@@ -40,6 +40,9 @@ public:
   // Timestamp is found using topdir/fembjson.dat.
   RdrPtr find(Index fembId, bool isCold, std::string ts,
               Index gain, Index shap, bool extPulse, bool extClock);
+
+  // Getters.
+  string topdir() const { return m_topdir; }
 
 private:
 

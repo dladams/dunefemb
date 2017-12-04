@@ -39,7 +39,8 @@
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcChannelDataModifier.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/AdcDataViewer.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneInterface/Tool/HistogramManager.h+");
-  gROOT->ProcessLine(".L $DUNETPC_LIB/libdune_DuneCommon.so");
+  string sline = ".L $DUNETPC_LIB/libdune_DuneCommon." + libext;
+  gROOT->ProcessLine(sline.c_str());
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/ArtSupport/ArtServiceHelper.h+");
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneServiceAccess/DuneServiceAccess.h+");
   // Build local classes.
