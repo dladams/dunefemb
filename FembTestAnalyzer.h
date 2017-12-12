@@ -3,12 +3,13 @@
 #ifndef FembTestAnalyzer_H
 #define FembTestAnalyzer_H
 
-#include <memory>
+#include "DuneFembReader.h"
+#include "FembTestPulseTree.h"
 #include "dune/DuneInterface/Data/DataMap.h"
 #include "dune/DuneInterface/Tool/AdcChannelDataModifier.h"
 #include "dune/DuneInterface/Tool/AdcChannelViewer.h"
 #include "dune/DuneCommon/TPadManipulator.h"
-#include "DuneFembReader.h"
+#include <memory>
 
 class FembTestAnalyzer {
 
@@ -65,6 +66,9 @@ public:
   int shapingIndex() const { return reader()==nullptr ? -1 : reader()->shapingIndex(); }
   bool extPulse() const { return m_extPulse; }
   bool extClock() const { return m_extClock; }
+
+  // Other getters.
+  FembTestPulseTree* pulseTree();
 
   // Setters.
   bool setDoDraw(bool val) { return m_doDraw = val; }
@@ -142,6 +146,7 @@ private:
   std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;
+  std::unique_ptr<FembTestPulseTree> m_ptreePulse;
 
   // Parameters.
   // These are deduced from the signal unit (ADC counts, ke, ...)

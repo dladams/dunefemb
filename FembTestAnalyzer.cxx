@@ -46,7 +46,8 @@ FembTestAnalyzer(opt, a_femb, fpat, a_isCold) {
 //**********************************************************************
 
 FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_isCold)
-: m_opt(CalibOption(opt%100)), m_doDraw(opt>99), m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold) {
+: m_opt(CalibOption(opt%100)), m_doDraw(opt>99), m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
+  m_ptreePulse(nullptr) {
   const string myname = "FembTestAnalyzer::ctor: ";
   DuneToolManager* ptm = DuneToolManager::instance("dunefemb.fcl");
   if ( ptm == nullptr ) {
@@ -263,6 +264,7 @@ processChannelEvent(Index icha, Index ievt) {
   if ( nroi ) {
     vector<float> sigAreas[2];
     vector<float> sigHeights[2];
+    vector<float> sigCals[2];    // calibrated charge
     vector<float> sigDevs[2];    // Deviation of calibrated value from expected value
     int sigNundr[2] = {0, 0};
     int sigNover[2] = {0, 0};
@@ -302,7 +304,13 @@ processChannelEvent(Index icha, Index ievt) {
       if ( area > areaMax[isPos] ) areaMax[isPos] = area;
       if ( height < heightMin[isPos] ) heightMin[isPos] = height;
       if ( height > heightMax[isPos] ) heightMax[isPos] = height;
-      if ( isHeightCalib() ) sigDevs[isPos].push_back(sign*(height - expSig));
+      float qcal = 0.0;
+      if ( isHeightCalib() ) qcal = height;
+      if ( isAreaCalib() )   qcal = area;
+      sigCals[isPos].push_back(qcal);
+      float dev = -999.0;
+      if ( isCalib() ) dev = sign*(qcal - expSig);
+      sigDevs[isPos].push_back(dev);
     }
     // For each sign...
     for ( Index isgn=0; isgn<2; ++isgn ) {
@@ -419,7 +427,9 @@ processChannelEvent(Index icha, Index ievt) {
       res.setInt(onam, sigNover[isgn]);
       // Record deviations if this signal is calibrated.
       if ( isHeightCalib() ) {
-        string varname = "roiSigDev" + ssgn;
+        string varname = "roiSigCal" + ssgn;
+        res.setFloatVector(varname, sigCals[isgn]);
+        varname = "roiSigDev" + ssgn;
         res.setFloatVector(varname, sigDevs[isgn]);
       }
     }  // End loop over isgn
@@ -1042,7 +1052,7 @@ cout << myname << "Channel " << icha << endl;
             phsatMax->SetBinContent(icha+1, resc.getFloat(fnam));
           }
         }
-        // Fill deviation histos.
+        // Fill RMS histos.
         string hnamChaRms = "hchaResp" + sarea + spos + "Rms";
         string hnamChaArs = "hchaResp" + sarea + spos + "Ars";
         string hnamChaGms = "hchaResp" + sarea + spos + "Gms";
@@ -1207,6 +1217,51 @@ cout << myname << "Channel " << icha << endl;
     allResult.setHist(ph->GetName(), ph, true);
   }
   return allResult;
+}
+
+//**********************************************************************
+
+FembTestPulseTree* FembTestAnalyzer::pulseTree() {
+  const string myname = "FembTestAnalyzer::pulseTree: ";
+  if ( m_ptreePulse != nullptr ) return m_ptreePulse.get();
+  if ( ! isCalib() ) {
+    cout << myname << "Must have calibration for pulse tree." << endl;
+    return nullptr;
+  }
+  ostringstream ssnam;
+  ssnam << "femb_test_pulse_femb" << femb() << "_g" << gainIndex()
+          << "_s" << shapingIndex()
+          << "_p" << (extPulse() ? "ext" : "int");
+  if ( ! extClock() ) ssnam << "_cint";
+  string snam = ssnam.str() + ".root";
+  m_ptreePulse.reset(new FembTestPulseTree(snam));
+  Index ncha = nChannel();
+  Index nevt = nEvent();
+  FembTestPulseData data;
+  data.femb = femb();
+  data.gain = gainIndex();
+  data.shap = shapingIndex();
+  data.extp = extPulse();
+  for ( Index icha=0; icha<ncha; ++icha ) {
+    for ( Index ievt=0; ievt<nevt; ++ievt ) {
+      DataMap res = processChannelEvent(icha, ievt);
+      float nele = res.getFloat("nElectron");
+      if ( nele == 0.0 ) continue;
+      data.qexp = -0.001*nele;
+      data.nsat = res.getInt("sigNUnderflowNeg");
+      data.stk1 = res.getFloat("stickyFraction1Neg");
+      data.stk2 = res.getFloat("stickyFraction2Neg");
+      data.qcal = res.getFloatVector("roiSigCalNeg");
+      m_ptreePulse->fill(data);
+      data.qexp = 0.001*nele;
+      data.nsat = res.getInt("sigNOverflowPos");
+      data.stk1 = res.getFloat("stickyFraction1Pos");
+      data.stk2 = res.getFloat("stickyFraction2Pos");
+      data.qcal = res.getFloatVector("roiSigCalPos");
+      m_ptreePulse->fill(data);
+    }
+  }
+  return m_ptreePulse.get();
 }
 
 //**********************************************************************

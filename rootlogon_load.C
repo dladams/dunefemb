@@ -48,6 +48,7 @@
   gROOT->ProcessLine(".L DuneFembReader.cxx+");
   gROOT->ProcessLine(".L dunesupport/FileDirectory.cxx+");
   gROOT->ProcessLine(".L DuneFembFinder.cxx+");
+  gROOT->ProcessLine(".L FembTestPulseTree.cxx+");
   gROOT->ProcessLine(".L FembTestAnalyzer.cxx+");
   gROOT->ProcessLine(".L FembDatasetAnalyzer.cxx+");
   gROOT->ProcessLine(".L draw.cxx+");
