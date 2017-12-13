@@ -307,6 +307,7 @@ processChannelEvent(Index icha, Index ievt) {
       float qcal = 0.0;
       if ( isHeightCalib() ) qcal = height;
       if ( isAreaCalib() )   qcal = area;
+      qcal *= sign;
       sigCals[isPos].push_back(qcal);
       float dev = -999.0;
       if ( isCalib() ) dev = sign*(qcal - expSig);
@@ -426,11 +427,28 @@ processChannelEvent(Index icha, Index ievt) {
       res.setInt(unam, sigNundr[isgn]);
       res.setInt(onam, sigNover[isgn]);
       // Record deviations if this signal is calibrated.
-      if ( isHeightCalib() ) {
+      if ( isCalib() ) {
         string varname = "roiSigCal" + ssgn;
         res.setFloatVector(varname, sigCals[isgn]);
         varname = "roiSigDev" + ssgn;
         res.setFloatVector(varname, sigDevs[isgn]);
+      }
+      // Record mean and RMS of the calibrated signal.
+      if ( isCalib() ) {
+        Index nsum = 0;
+        double xsum = 0.0;
+        double xxsum = 0.0;
+        for ( float sig : sigCals[isgn] ) {
+          ++nsum;
+          xsum += sig;
+          xxsum += sig*sig;
+        }
+        double xmean = nsum>0 ? xsum/nsum : 0.0;
+        double xxmean = nsum>0 ? xxsum/nsum : 0.0;
+        float sigMean = xmean;
+        float sigRms = sqrt(xxmean - xmean*xmean);
+        res.setFloat("roiSigCalMean" + ssgn, sigMean);
+        res.setFloat("roiSigCalRms" + ssgn,  sigRms);
       }
     }  // End loop over isgn
   } else if ( haverois ) {
@@ -1243,6 +1261,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
   data.shap = shapingIndex();
   data.extp = extPulse();
   for ( Index icha=0; icha<ncha; ++icha ) {
+    data.chan = icha;
     for ( Index ievt=0; ievt<nevt; ++ievt ) {
       DataMap res = processChannelEvent(icha, ievt);
       float nele = res.getFloat("nElectron");
@@ -1252,12 +1271,16 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
       data.stk1 = res.getFloat("stickyFraction1Neg");
       data.stk2 = res.getFloat("stickyFraction2Neg");
       data.qcal = res.getFloatVector("roiSigCalNeg");
+      data.cmea = res.getFloat("roiSigCalMeanNeg");
+      data.crms = res.getFloat("roiSigCalRmsNeg");
       m_ptreePulse->fill(data);
       data.qexp = 0.001*nele;
       data.nsat = res.getInt("sigNOverflowPos");
       data.stk1 = res.getFloat("stickyFraction1Pos");
       data.stk2 = res.getFloat("stickyFraction2Pos");
       data.qcal = res.getFloatVector("roiSigCalPos");
+      data.cmea = res.getFloat("roiSigCalMeanPos");
+      data.crms = res.getFloat("roiSigCalRmsPos");
       m_ptreePulse->fill(data);
     }
   }

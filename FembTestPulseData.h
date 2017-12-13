@@ -20,8 +20,13 @@ public:
   Index shap;   // Shaping Index
   bool  extp;   // True for external pulser.
 
+  // Channel data.
+  Index chan;   // Channel
+
   // Event/sign data
   float qexp;   // Expected charge [ke]
+  float cmea;   // Calibrated signal mean
+  float crms;   // Calibrated signal RMS;
   float stk1;   // sticky 1
   float stk2;   // sticky 1
   int   nsat;   // # saturated pulses

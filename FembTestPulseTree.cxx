@@ -22,7 +22,17 @@ FembTestPulseTree::FembTestPulseTree(string fname, string sopt) {
     file()->cd();
     m_ptree = new TTree("FembTestPulse", "FEMB test pulses");
     m_ptree->Branch("femb", &(m_data.femb), "femb/i");
-    m_ptree->Branch("qexp", &(m_data.qexp), "qexp/F");
+    m_ptree->Branch("gain", &(m_data.gain), "gain/i");
+    m_ptree->Branch("shap", &(m_data.shap), "shap/i");
+    m_ptree->Branch("extp", &(m_data.extp), "extp/O");
+    m_ptree->Branch("qexp", &(m_data.qexp));
+    m_ptree->Branch("chan", &(m_data.chan), "chan/i");
+    m_ptree->Branch("cmea", &(m_data.cmea), "cmea/F");
+    m_ptree->Branch("crms", &(m_data.crms), "crms/F");
+    m_ptree->Branch("stk1", &(m_data.stk1), "stk1/F");
+    m_ptree->Branch("stk2", &(m_data.stk2), "stk2/F");
+    m_ptree->Branch("nsat", &(m_data.nsat));
+    m_ptree->Branch("qcal", &(m_data.qcal));
     pdirSave->cd();
   }
   clear();
@@ -48,10 +58,13 @@ void FembTestPulseTree::clear() {
   m_data.shap = 999;
   m_data.extp = false;
   m_data.qexp = 0.0;
-  m_data.qcal.clear();
+  m_data.chan = 999;
   m_data.nsat = -1;
+  m_data.cmea = 0.0;
+  m_data.crms = 0.0;
   m_data.stk1 = -1.0;
   m_data.stk2 = -1.0;
+  m_data.qcal.clear();
 }
 
 //**********************************************************************
