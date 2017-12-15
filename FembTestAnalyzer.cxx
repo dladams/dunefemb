@@ -14,6 +14,7 @@
 #include "TPad.h"
 #include "TLatex.h"
 #include "TLegend.h"
+#include "TSystem.h"
 
 using std::string;
 using std::cout;
@@ -31,6 +32,7 @@ FembTestAnalyzer(int opt, int a_femb, int a_gain, int a_shap,
                  bool a_extPulse, bool a_extClock) :
 FembTestAnalyzer(opt, a_femb, a_tspat, a_isCold) {
   find(a_gain, a_shap, a_extPulse, a_extClock);
+  getTools();
 }
 
 //**********************************************************************
@@ -41,6 +43,7 @@ FembTestAnalyzer(int opt, string dir, string fpat,
                  bool a_isCold, bool a_extPulse, bool a_extClock) :
 FembTestAnalyzer(opt, a_femb, fpat, a_isCold) {
   find(a_gain, a_shap, a_extPulse, a_extClock, dir);
+  getTools();
 }
 
 //**********************************************************************
@@ -49,20 +52,31 @@ FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_i
 : m_opt(CalibOption(opt%100)), m_doDraw(opt>99), m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
   m_ptreePulse(nullptr) {
   const string myname = "FembTestAnalyzer::ctor: ";
-  DuneToolManager* ptm = DuneToolManager::instance("dunefemb.fcl");
-  if ( ptm == nullptr ) {
-    cout << myname << "Unable to retrieve tool manager." << endl;
-    return;
-  }
   adcModifierNames.push_back("adcPedestalFit");
   if ( isNoCalib() ) {
     adcModifierNames.push_back("adcSampleFiller");
     adcModifierNames.push_back("adcThresholdSignalFinder");
   }
   if ( isHeightCalib() ) {
-     adcModifierNames.push_back("fembCalibrator");
+     adcModifierNames.push_back("fembCalibratorG%GAIN%S%SHAP%%WARM%");
      adcModifierNames.push_back("keThresholdSignalFinder");
   }
+  adcViewerNames.push_back("adcRoiViewer");
+  adcViewerNames.push_back("adcPlotRaw");
+  adcViewerNames.push_back("adcPlotRawDist");
+  adcViewerNames.push_back("adcPlotPrepared");
+}
+
+//**********************************************************************
+
+void FembTestAnalyzer::getTools() {
+  const string myname = "FembTestAnalyzer::getTools: ";
+  DuneToolManager* ptm = DuneToolManager::instance("dunefemb.fcl");
+  if ( ptm == nullptr ) {
+    cout << myname << "Unable to retrieve tool manager." << endl;
+    return;
+  }
+  fixToolNames(adcModifierNames);
   for ( string modname : adcModifierNames ) {
     auto pmod = ptm->getPrivate<AdcChannelDataModifier>(modname);
     if ( ! pmod ) {
@@ -72,11 +86,8 @@ FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_i
     }
     adcModifiers.push_back(std::move(pmod));
   }
-  vector<string> acdViewerNames = {"adcRoiViewer"};
-  acdViewerNames.push_back("adcPlotRaw");
-  acdViewerNames.push_back("adcPlotRawDist");
-  acdViewerNames.push_back("adcPlotPrepared");
-  for ( string vwrname : acdViewerNames ) {
+  fixToolNames(adcViewerNames);
+  for ( string vwrname : adcViewerNames ) {
     auto pvwr = ptm->getPrivate<AdcChannelViewer>(vwrname);
     if ( ! pvwr ) {
       cout << myname << "Unable to find viewer " << vwrname << endl;
@@ -85,6 +96,32 @@ FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_i
       return;
     }
     adcViewers.push_back(std::move(pvwr));
+  }
+}
+
+//**********************************************************************
+
+void FembTestAnalyzer::fixToolNames(vector<string>& names) const {
+  map<string, string> subs;
+  ostringstream ssgain;
+  ssgain << gainIndex();
+  subs["%GAIN%"] = ssgain.str();
+  ostringstream ssshap;
+  ssshap << shapingIndex();
+  subs["%SHAP%"] = ssshap.str();
+  subs["%WARM%"] = isCold() ? "" : "Warm";
+  for ( string& name : names ) {
+    for ( auto ent : subs ) {
+      string sold = ent.first;
+      string snew = ent.second;
+      string::size_type ipos = 0;
+      while ( ipos < sold.size() ) {
+        ipos = name.find(sold, ipos);
+        if ( ipos == string::npos ) break;
+        name.replace(ipos, sold.size(), snew);
+        ipos += snew.size();
+      }
+    }
   }
 }
 
@@ -162,8 +199,8 @@ processChannelEvent(Index icha, Index ievt) {
     static DataMap res1(1);
     return res1;
   }
-  if ( adcModifiers.size() == 0 ) {
-    cout << myname << "ADC modifiers are not defined." << endl;
+  if ( ! haveTools() ) {
+    cout << myname << "ADC processing tools are missing." << endl;
     static DataMap res2(2);
     return res2;
   }
@@ -195,7 +232,7 @@ processChannelEvent(Index icha, Index ievt) {
   Index imod = 0;
   for ( const std::unique_ptr<AdcChannelDataModifier>& pmod : adcModifiers ) {
     string modName = adcModifierNames[imod];
-   if ( dbg > 2 ) cout << "Applying modifier " << modName << endl;
+    if ( dbg > 2 ) cout << "Applying modifier " << modName << endl;
     resmod += pmod->update(acd);
     if ( resmod.status() ) {
       cout << myname << "Modifier " << modName << " returned error "
@@ -476,6 +513,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     cout << myname << "Reader does not specify if pulse is internal or external." << endl;
     return DataMap(2);
   }
+  if ( ! haveTools() ) {
+    cout << myname << "ADC processing tools are missing." << endl;
+    return DataMap(3);
+  }
   bool pulseIsExternal = prdr->extPulse();
   if ( pulseIsExternal ) ievt0 = 1;
   bool useBoth = usePosOpt == "Both";
@@ -495,7 +536,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   string gttl = styp + " response" + usePosLab + " channel " + scha;
   string gttlr = styp + " response residual" + usePosLab + " channel " + scha;
   string httl = gttl + " ; charge factor; Mean ADC " + styp;
-  // Create arrays to hold pulse ADC count vs. # ke.
+  // Create arrays use to evaluate the response.
   // For external pulser, include (0,0).
   Index npt = prdr->extPulse() ? 1 : 0;
   npt = 0;  // Don't use the point at zero
@@ -505,6 +546,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<float> dy(npt, 0.0);
   vector<float> dyFit(npt, 0.0);
   vector<float> fitPed(npt, 0.0);
+  // End of response arrays
   vector<float> sticky1[2];
   vector<float> sticky2[2];
   vector<bool> fitkeep(npt, true);
@@ -593,6 +635,11 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       }
     }
   }
+  // Sort the reponse arrays.
+  map<float, int> iptOrderMap;
+  for ( Index ipt=0; ipt<x.size(); ++ipt ) iptOrderMap[x[ipt]] = ipt;
+  vector<Index> iptOrdered;
+  for ( auto ent : iptOrderMap ) iptOrdered.push_back(ent.second);
   npt = x.size();
   vector<float> xf;
   vector<float> dxf;
@@ -600,7 +647,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   vector<float> dyf;
   vector<float> dyfFit;
   vector<float> fitPedf;
-  for ( Index ipt=0; ipt<npt; ++ipt ) {
+  for ( Index ipt : iptOrdered ) {
     if ( fitkeep[ipt] ) {
       xf.push_back(x[ipt]);
       dxf.push_back(dx[ipt]);
@@ -664,11 +711,18 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   float gain = nptf > 0 ? y[iptGain]/x[iptGain] : 0.0;
   float ped = 0.0;
   float adcmax = 100000;
-  float adcmin = 0.0;
+  float adcmin = -100000;
+  float adcfloor = adcmin;   // Points with ADC below this are not used in refit.
   float keloff = 0.0;
+  float slowoff = 10.0;
+  float slowfac = 0.8;
+  float adctanhMin = 0.1;
+  float adctanh = adctanhMin;
   bool fitAdcMin = false;
   bool fitAdcMax = false;
   bool fitKelOff = false;
+  bool fitSlow = false;
+  bool fitTanh = 1;
   // Choose fit function.
   string sfit = "fgain";
   if ( isNoCalib() ) {
@@ -678,6 +732,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       if ( prdr->extPulse() ) {
         if ( false && nptPosBad ) sfit = "fgainMinMax";
         else sfit = "fgainMin";
+        //else sfit = "fgainMinSlow";
+        //else sfit = "fgainMinSlow2";
       } else if ( prdr->intPulse() ) {
         if ( false && nptPosBad ) sfit = "fgainOffMinMax";
         else sfit = "fgainOffMin";
@@ -685,6 +741,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     }
   }
   TF1* pfit = nullptr;
+  TF1* prefit = nullptr;
   if ( nptf > 0 ) {
     if ( sfit == "fgain" ) {
       pfit = new TF1("fgain", "[0]*x");
@@ -694,6 +751,41 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       pfit->SetParameter(1, adcmin);
       pfit->SetParName(1, "adcmin");
       fitAdcMin = true;
+    } else if ( sfit == "fgainMinSlow" ) {
+      pfit = new TF1("fgainMinSlow", "x>([1]/[0]+[2])?[0]*x:(x<([1]/[0]-[2])?[1]:0.5*([0]*(x+[2])+[1]))");
+      adcmin = yf[nptf-2];
+      pfit->SetParameter(1, adcmin);
+      pfit->SetParName(1, "adcmin");
+      pfit->SetParameter(2, slowoff);
+      pfit->SetParName(2, "slowoff");
+      pfit->SetParLimits(2, 0, 50);
+      fitAdcMin = true;
+      fitSlow = true;
+    } else if ( sfit == "fgainMinSlow2" ) {
+      pfit = new TF1("fgainMinSlow2", "x>([1]/[0]-[3]*[2])/(1-[3])?[0]*x:(x<[2]?[1]:([3]*[0]*(x-[2])+[1]))");
+      pfit = new TF1("fgainMinSlow2", "x>([1]/[0]+[2]/(1/[3]-1))?[0]*x:(x<([1]/[0]-[2])?[1]:([3]*[0]*(x-[1]/[0]+[2])+[1]))");
+      adcmin = yf[nptf-2];
+      pfit->SetParameter(1, adcmin);
+      pfit->SetParName(1, "adcmin");
+      pfit->SetParameter(2, slowoff);
+      pfit->SetParName(2, "slowoff");
+      pfit->SetParLimits(2, 0, 50);
+      pfit->SetParameter(2, slowoff);
+      pfit->SetParName(3, "slowfac");
+      pfit->SetParameter(3, slowfac);
+      pfit->SetParLimits(3, 0.01, 0.99);
+      fitAdcMin = true;
+      fitSlow = true;
+    } else if ( sfit == "fgainMinTanh" ) {
+      pfit = new TF1("fgainMinTanh", "x>([1]/[0])?[0]*tanh((x-[1]/[0])/[2])*x:[1]");
+      adcmin = yf[nptf-2];
+      pfit->SetParameter(1, adcmin);
+      pfit->SetParName(1, "adcmin");
+      pfit->SetParameter(2, adctanh);
+      pfit->SetParName(2, "adctanh");
+      pfit->SetParLimits(2, adctanhMin, 20);
+      fitAdcMin = true;
+      fitTanh = true;
     } else if ( sfit == "fgainMax" ) {
       pfit = new TF1("fgainMax", "x<[1]/[0]?[0]*x:[1]");
       adcmax = yf[nptf-1];
@@ -750,7 +842,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     pfit->SetParLimits(0, 0.8*gain, 1.2*gain);
     Index npar = pfit->GetNpar();
     //pgf->Fit(pfit, "", "", xfmin, x[2]);
-    pgfFit->Fit(pfit, "Q");
+    pgfFit->Fit(pfit, "");
     pgf->GetListOfFunctions()->Add(pfit);
     gain = pfit->GetParameter(0);
     if ( fitAdcMin ) adcmin = pfit->GetParameter(pfit->GetParNumber("adcmin"));
@@ -765,18 +857,30 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       pfit->FixParameter(ipar, adcmin);
       pgf->Fit(pfit, "Q+");
     }
-    // Refit without min saturation.
-    if ( fitAdcMin ) {
-      delete pfit;
-      pfit = new TF1("fgain", "[0]*x");
-      pfit->SetParName(0, "gain");
-      pfit->SetParameter(0, gain);
-      pgf->Fit(pfit, "Q+", "", qmin, qmax);
-    }
 */
+    // Refit without min saturation.
+    // Exclude points close to saturation.
+    adcfloor = adcmin;
+    if ( true ) {
+      double xfmin = xf[0] - 1.0;
+      adcfloor = adcmin + 400;
+      for ( Index ipt=0; ipt<nptf; ++ipt ) {
+        if ( yf[ipt] < adcfloor ) {
+          double xfminNew = xf[ipt] + 1.0;
+          if ( xfminNew > xfmin ) xfmin = xfminNew;
+        }
+      }
+      qmin = xfmin;
+      prefit = new TF1("fgain", "[0]*x");
+      prefit->SetParName(0, "gain");
+      prefit->SetParameter(0, gain);
+      pgfFit->Fit(prefit, "", "", qmin, qmax);
+      pgf->GetListOfFunctions()->Add(pfit);
+      pfit = prefit;
+    }
     // Record the gain.
-    gain = pfit->GetParameter(0);
-    double gainUnc = pfit->GetParError(0);
+    gain = prefit->GetParameter(0);
+    double gainUnc = prefit->GetParError(0);
     string fpname = "fitGain" + styp + usePosOpt;
     string fename = fpname + "Unc";
     res.setFloat(fpname, gain);
@@ -850,7 +954,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     xres.push_back(xpt);
     yres.push_back(ydif/gain);
     dyres.push_back(dyf[ipt]/gain);
-    if ( fitAdcMin && (yfit <= 0.9999*adcmin) ) continue;
+    if ( fitAdcMin && (yfit <= 0.9999*adcfloor) ) continue;
     if ( fitAdcMax && (yfit >= 0.9999*adcmax) ) continue;
     xrese.push_back(xpt);
     yrese.push_back(ydif/gain);
@@ -961,8 +1065,13 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
 //**********************************************************************
 
 const DataMap& FembTestAnalyzer::processChannel(Index icha) {
+  const string myname = "FembTestAnalyzer::processChannel: ";
   DataMap& res = chanResults[icha];
   if ( res.haveInt("channel") ) return res;
+  if ( ! haveTools() ) {
+    cout << myname << "ADC processing tools are missing." << endl;
+    return res.setStatus(3);
+  }
   bool useBoth = true;
   if ( useBoth ) {
     res += getChannelResponse(icha, "Both",  true);
@@ -1239,11 +1348,21 @@ cout << myname << "Channel " << icha << endl;
 
 //**********************************************************************
 
+bool FembTestAnalyzer::haveTools() const {
+  return adcModifiers.size() && adcViewers.size();
+}
+
+//**********************************************************************
+
 FembTestPulseTree* FembTestAnalyzer::pulseTree() {
   const string myname = "FembTestAnalyzer::pulseTree: ";
   if ( m_ptreePulse != nullptr ) return m_ptreePulse.get();
   if ( ! isCalib() ) {
     cout << myname << "Must have calibration for pulse tree." << endl;
+    return nullptr;
+  }
+  if ( ! haveTools() ) {
+    cout << myname << "ADC processing tools are missing." << endl;
     return nullptr;
   }
   ostringstream ssnam;
@@ -1262,11 +1381,15 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
   data.extp = extPulse();
   for ( Index icha=0; icha<ncha; ++icha ) {
     data.chan = icha;
+    DataMap res0 = processChannelEvent(icha, 0);
+    data.ped0 = res0.getFloat("pedestal");
     for ( Index ievt=0; ievt<nevt; ++ievt ) {
       DataMap res = processChannelEvent(icha, ievt);
+      data.pede = res.getFloat("pedestal");
       float nele = res.getFloat("nElectron");
       if ( nele == 0.0 ) continue;
       data.qexp = -0.001*nele;
+      data.sevt = -ievt;
       data.nsat = res.getInt("sigNUnderflowNeg");
       data.stk1 = res.getFloat("stickyFraction1Neg");
       data.stk2 = res.getFloat("stickyFraction2Neg");
@@ -1275,6 +1398,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
       data.crms = res.getFloat("roiSigCalRmsNeg");
       m_ptreePulse->fill(data);
       data.qexp = 0.001*nele;
+      data.sevt = ievt;
       data.nsat = res.getInt("sigNOverflowPos");
       data.stk1 = res.getFloat("stickyFraction1Pos");
       data.stk2 = res.getFloat("stickyFraction2Pos");
@@ -1284,6 +1408,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
       m_ptreePulse->fill(data);
     }
   }
+  m_ptreePulse->write();
   return m_ptreePulse.get();
 }
 
@@ -1295,13 +1420,25 @@ int FembTestAnalyzer::writeCalibFcl() {
     cout << myname << "Invalid calibration option: " << optionName() << endl;
     return 1;
   }
-  ostringstream ssfemb;
-  ssfemb << femb();
-  string sfemb = ssfemb.str();
   string sclass = "FembLinearCalibration";
   string baseName = "calibFromFemb";
-  string toolName = baseName + sfemb;
-  string fclName = baseName + "/" + toolName + ".fcl";
+  ostringstream ssnam;
+  ssnam << baseName << "_" << "g" << gainIndex() << "s" << shapingIndex();
+  if ( ! isCold() ) ssnam << "_warm";
+  if ( ! extPulse() ) ssnam << "_intPulse";
+  if ( ! extClock() ) ssnam << "_intClock";
+  string dirName = ssnam.str();
+  bool dirMissing = gSystem->AccessPathName(dirName.c_str());
+  if ( dirMissing ) {
+    if ( gSystem->mkdir(dirName.c_str()) ) {
+      cout << myname << "Unable to create calibration fcl directory " << dirName << endl;
+      return 2;
+    }
+    cout << myname << "Created directory " << dirName << endl;
+  }
+  ssnam << "_femb" << femb();
+  string toolName = ssnam.str();
+  string fclName = dirName + "/" + toolName + ".fcl";
   ofstream fout(fclName.c_str());
   ostringstream ssgain, ssamin;
   string gainName = "fitGainHeightBoth";

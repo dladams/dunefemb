@@ -41,6 +41,9 @@ public:
   // Data are left with these values.
   void fill(const FembTestPulseData& data);
 
+  // Write the tree to the file.
+  void write();
+
   // Getters.
   TFile* file() { return m_pfile; }
   TTree* tree() { return m_ptree; }
@@ -57,6 +60,7 @@ private:
 
   TFile* m_pfile;
   TTree* m_ptree;
+  bool m_needWrite;
 
 };
 

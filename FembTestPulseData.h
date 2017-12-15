@@ -22,9 +22,14 @@ public:
 
   // Channel data.
   Index chan;   // Channel
+  float ped0;   // ADC pedestal with no pulse
 
   // Event/sign data
   float qexp;   // Expected charge [ke]
+  int sevt;     // Signed event index.
+
+  // Channel/Event/sign data
+  float pede;   // ADC pedestal with pulses
   float cmea;   // Calibrated signal mean
   float crms;   // Calibrated signal RMS;
   float stk1;   // sticky 1

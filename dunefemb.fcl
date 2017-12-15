@@ -26,9 +26,24 @@ tools.adcThresholdSignalFinder.BinsAfter:  10
 tools.keThresholdSignalFinder: @local::tools.adcThresholdSignalFinder
 tools.keThresholdSignalFinder.Threshold: 15
 
-tools.fembCalibrator: {
+tools.fembCalibratorG2S2: {
   tool_type: FembMappedAdcModifier
   LogLevel: 1
-  ToolBase: calibFromFemb
-  DirName:  calibFromFemb
+  ToolBase: "calibFromFemb_g2s2_femb"
+  DirName:  "calibFromFemb_g2s2"
 }
+
+tools.fembCalibratorG3S2: {
+  tool_type: FembMappedAdcModifier
+  LogLevel: 1
+  ToolBase: "calibFromFemb_g3s2_femb"
+  DirName:  "calibFromFemb_g3s2"
+}
+
+tools.fembCalibratorG2S2Warm: {
+  tool_type: FembMappedAdcModifier
+  LogLevel: 1
+  ToolBase: "calibFromFemb_g2s2_warm_femb"
+  DirName:  "calibFromFemb_g2s2_warm"
+}
+

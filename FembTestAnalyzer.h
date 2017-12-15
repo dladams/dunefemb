@@ -64,10 +64,11 @@ public:
   bool isCold() const { return m_isCold; }
   int gainIndex() const { return reader()==nullptr ? -1 : reader()->gainIndex(); }
   int shapingIndex() const { return reader()==nullptr ? -1 : reader()->shapingIndex(); }
-  bool extPulse() const { return m_extPulse; }
-  bool extClock() const { return m_extClock; }
+  bool extPulse() const { return reader() == nullptr ? false : reader()->extPulse(); }
+  bool extClock() const { return reader() == nullptr ? false : reader()->extClock(); }
 
   // Other getters.
+  bool haveTools() const;     // This will be false if tools are not found in initialization.
   FembTestPulseTree* pulseTree();
 
   // Setters.
@@ -139,11 +140,10 @@ private:
   bool m_isCold;
   int m_gain;
   int m_shap;
-  bool m_extPulse;
-  bool m_extClock;
   std::unique_ptr<DuneFembReader> m_reader;
   std::vector<std::string> adcModifierNames;
   std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
+  std::vector<std::string> adcViewerNames;
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;
   std::unique_ptr<FembTestPulseTree> m_ptreePulse;
@@ -156,6 +156,14 @@ private:
   int m_sigDevHistBinCount = 10;  // bins in deviation histos
   double m_sigDevHistMax = 1.0;   // Limit for deviation histos
 
+  // Fetch tools.
+  // Separate so it can be called after gain and shaping have been determined.
+  void getTools();
+
+  // Make pattern substitutions on tool names.
+  //  %GAIN% --> gainIndex()
+  //  %SHAP% --> shapingIndex()
+  void fixToolNames(std::vector<std::string>& names) const;
 
 };
 
