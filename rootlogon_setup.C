@@ -5,7 +5,7 @@
 //
 // Root startup file fo dunefemb.
 
-#define ADDSERVICES 1
+#define ADDSERVICES 0
 
 // Define service helper.
 #if ADDSERVICES

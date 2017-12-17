@@ -658,7 +658,14 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     }
   }
   Index nptf = xf.size();
-  if ( nptf < 5 ) cout << myname << "WARNING: Fitted point count is " << nptf << endl;
+  if ( nptf < 5 ) {
+    int wf = 12;
+    cout << myname << "WARNING: Fitted point count is " << nptf << endl;
+    cout << setw(4) << "i" << setw(wf) << "q [ke]" << setw(wf) << "signal" << setw(wf) << "keep" << endl;
+    for ( Index ipt : iptOrdered ) {
+      cout << setw(4) << ipt << setw(wf) << x[ipt] << setw(wf) << y[ipt] << setw(wf) << fitkeep[ipt] << endl;
+    }
+  }
   res.setInt("channel", icha);
   res.setFloatVector("peds", peds);
   res.setFloatVector("nkes", nkeles);
@@ -740,6 +747,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       }
     }
   }
+  TF1* pfit0 = nullptr;
   TF1* pfit = nullptr;
   TF1* prefit = nullptr;
   if ( nptf > 0 ) {
@@ -840,9 +848,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     pfit->SetParName(0, "gain");
     pfit->SetParameter(0, gain);
     pfit->SetParLimits(0, 0.8*gain, 1.2*gain);
+    pfit0 = pfit;
     Index npar = pfit->GetNpar();
     //pgf->Fit(pfit, "", "", xfmin, x[2]);
-    pgfFit->Fit(pfit, "");
+    pgfFit->Fit(pfit, "Q");
     pgf->GetListOfFunctions()->Add(pfit);
     gain = pfit->GetParameter(0);
     if ( fitAdcMin ) adcmin = pfit->GetParameter(pfit->GetParNumber("adcmin"));
@@ -863,6 +872,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     adcfloor = adcmin;
     if ( true ) {
       double xfmin = xf[0] - 1.0;
+      double xfmax = qmax;
       adcfloor = adcmin + 400;
       for ( Index ipt=0; ipt<nptf; ++ipt ) {
         if ( yf[ipt] < adcfloor ) {
@@ -870,11 +880,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
           if ( xfminNew > xfmin ) xfmin = xfminNew;
         }
       }
-      qmin = xfmin;
       prefit = new TF1("fgain", "[0]*x");
       prefit->SetParName(0, "gain");
       prefit->SetParameter(0, gain);
-      pgfFit->Fit(prefit, "", "", qmin, qmax);
+      pgfFit->Fit(prefit, "Q", "", xfmin, xfmax);
       pgf->GetListOfFunctions()->Add(pfit);
       pfit = prefit;
     }
@@ -911,7 +920,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       float lowSaturatedRawAdcMax = 0.0;
       for ( Index ipt=0; ipt<xf.size(); ++ipt ) {
         float q = xf[ipt];
-        double a = pfit->Eval(q);
+        double a = pfit0->Eval(q);
         if ( q > qmin ) {
           float dadc = a - adcmin;
           if ( dadc < dadcNearest ) {
@@ -1141,6 +1150,10 @@ const DataMap& FembTestAnalyzer::processAll() {
       string httl = sarea + " " + spos + " Gain; Channel; Gain [ADC/ke]";
       TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
       hists[hnam] = phg;
+      string hnamd = "hgaindist" + sarea + spos;
+      string httld = sarea + " " + spos + " Gain; Gain [ADC/ke]; # channels";
+      TH1* phgd = new TH1F(hnamd.c_str(), httld.c_str(), 100, 0, -1);
+      hists[hnamd] = phgd;
       // Deviation histograms.
       string hnamRms = "hall" + sarea + spos + "Rms";
       string hnamArs = "hall" + sarea + spos + "Ars";
@@ -1165,8 +1178,10 @@ cout << myname << "Channel " << icha << endl;
         string fnam = "fitGain" + sarea + spos;
         string fenam = fnam + "Unc";
         const DataMap& resc = processChannel(icha);
-        phg->SetBinContent(icha+1, resc.getFloat(fnam));
+        float gain = resc.getFloat(fnam);
+        phg->SetBinContent(icha+1, gain);
         phg->SetBinError(icha+1, resc.getFloat(fenam));
+        phgd->Fill(gain);
         if ( phsatMin != nullptr ) {
           fnam = "fitSaturationMinHeight" + spos;
           if ( resc.haveFloat(fnam) ) {
