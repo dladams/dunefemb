@@ -341,14 +341,16 @@ processChannelEvent(Index icha, Index ievt) {
       if ( area > areaMax[isPos] ) areaMax[isPos] = area;
       if ( height < heightMin[isPos] ) heightMin[isPos] = height;
       if ( height > heightMax[isPos] ) heightMax[isPos] = height;
-      float qcal = 0.0;
-      if ( isHeightCalib() ) qcal = height;
-      if ( isAreaCalib() )   qcal = area;
-      qcal *= sign;
-      sigCals[isPos].push_back(qcal);
-      float dev = -999.0;
-      if ( isCalib() ) dev = sign*(qcal - expSig);
-      sigDevs[isPos].push_back(dev);
+      if ( isCalib() ) {
+        float qcal = 0.0;
+        if ( isHeightCalib() ) qcal = height;
+        if ( isAreaCalib() )   qcal = area;
+        qcal *= sign;
+        sigCals[isPos].push_back(qcal);
+        float dev = -999.0;
+        if ( isCalib() ) dev = sign*(qcal - sign*expSig);
+        sigDevs[isPos].push_back(dev);
+      }
     }
     // For each sign...
     for ( Index isgn=0; isgn<2; ++isgn ) {

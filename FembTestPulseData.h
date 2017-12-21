@@ -28,8 +28,10 @@ public:
   float qexp;   // Expected charge [ke]
   int sevt;     // Signed event index.
 
-  // Channel/Event/sign data
+  // Channel/Event data
   float pede;   // ADC pedestal with pulses
+
+  // Channel/Event/sign data
   float cmea;   // Calibrated signal mean
   float crms;   // Calibrated signal RMS;
   float stk1;   // sticky 1
