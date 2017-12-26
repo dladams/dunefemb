@@ -5,6 +5,7 @@
 
 #include "DuneFembReader.h"
 #include "FembTestPulseTree.h"
+#include "FembTestTickModTree.h"
 #include "dune/DuneInterface/Data/DataMap.h"
 #include "dune/DuneInterface/Tool/AdcChannelDataModifier.h"
 #include "dune/DuneInterface/Tool/AdcChannelViewer.h"
@@ -47,6 +48,9 @@ public:
   // Returns 0 for success.
   int find(int gain, int shap, bool extPulse =false, bool extClock =true, std::string dir="");
 
+  // Set the tick period used in the tickmod tree.
+  int setTickPeriod(Index val);
+
   // Return the reader for the current sample.
   DuneFembReader* reader() const { return m_reader.get(); }
 
@@ -70,6 +74,8 @@ public:
   // Other getters.
   bool haveTools() const;     // This will be false if tools are not found in initialization.
   FembTestPulseTree* pulseTree();
+  FembTestTickModTree* tickModTree();
+  Index tickPeriod() const { return m_tickPeriod; }
 
   // Setters.
   bool setDoDraw(bool val) { return m_doDraw = val; }
@@ -78,6 +84,7 @@ public:
   Index nEvent() const { return m_reader == nullptr ? 0 : m_reader->nEvent(); }
   Index nChannel() const { return m_reader == nullptr ? 0 : m_reader->nChannel(); }
   Index nChannel(Index ievt) const { return m_reader == nullptr ? 0 : m_reader->nChannel(ievt); }
+  Index nChannelEventProcessed() const { return m_nChannelEventProcessed; }
 
   // Some constants.
   double elecPerFc() const { return 6241.51; }
@@ -108,7 +115,8 @@ public:
   const DataMap& processChannel(Index icha);
 
   // Process all channels.
-  const DataMap& processAll();
+  // If period > 0, the tick period is first set to that value.
+  const DataMap& processAll(int period =-1);
 
   // Write calibration info to FCL.
   int writeCalibFcl();
@@ -147,6 +155,9 @@ private:
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;
   std::unique_ptr<FembTestPulseTree> m_ptreePulse;
+  std::unique_ptr<FembTestTickModTree> m_ptreeTickMod;
+  Index m_tickPeriod;
+  Index m_nChannelEventProcessed;
 
   // Parameters.
   // These are deduced from the signal unit (ADC counts, ke, ...)

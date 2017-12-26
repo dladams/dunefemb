@@ -50,7 +50,8 @@ FembTestAnalyzer(opt, a_femb, fpat, a_isCold) {
 
 FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_isCold)
 : m_opt(CalibOption(opt%100)), m_doDraw(opt>99), m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
-  m_ptreePulse(nullptr) {
+  m_ptreePulse(nullptr), m_ptreeTickMod(nullptr), m_tickPeriod(0),
+  m_nChannelEventProcessed(0) {
   const string myname = "FembTestAnalyzer::ctor: ";
   adcModifierNames.push_back("adcPedestalFit");
   if ( isNoCalib() ) {
@@ -147,6 +148,18 @@ find(int a_gain, int a_shap, bool a_extPulse, bool a_extClock, string dir) {
 
 //**********************************************************************
 
+int FembTestAnalyzer::setTickPeriod(Index val) {
+  const string myname = "FembTestAnalyzer::setTickPeriod: ";
+  if ( nChannelEventProcessed() != 0 ) {
+    cout << myname << "Period cannot be set after processing has begun." << endl;
+    return 1;
+  }
+  m_tickPeriod = val;
+  return 0;
+}
+
+//**********************************************************************
+
 string FembTestAnalyzer::optionName() const {
   if ( isNoCalib()     ) return "OptNoCalib";
   if ( isHeightCalib() ) return "OptHeightCalib";
@@ -213,6 +226,7 @@ processChannelEvent(Index icha, Index ievt) {
   DataMap& res = chanevtResults[icha][ievt];
   if ( res.haveInt("channel") ) return res;
   res.setInt("channel", icha);
+  ++m_nChannelEventProcessed;
   res.setInt("event", ievt);
   const DuneFembReader* prdr = reader();
   if ( prdr == nullptr ) return res.setStatus(1);
@@ -429,13 +443,45 @@ processChannelEvent(Index icha, Index ievt) {
         res.setFloat(meanName, ph->GetMean());
         res.setFloat(rmsName, ph->GetRMS());
       }
+      // Evaluate the periods.
+      // The period is # ticks between each adjacent pair of peaks of the same sign.
+      const DataMap::IntVector& roiTick0s = resmod.getIntVector("roiTick0s");
+      if ( roiTick0s.size()) {
+        vector<int> roiPeriods;
+        string vecname = isgn ? "roiTickMaxs" : "roiTickMins";
+        const DataMap::IntVector& roiTicks = resmod.getIntVector(vecname);
+        Index tickLast = 0;
+        Index count = 0;
+        map<Index, Index> countPeriod;
+        Index periodMax = 0;
+        for ( Index iroi=iroi1; iroi<iroi2; ++iroi ) {
+          if ( roiIsPos[iroi] != isgn ) continue;
+          Index tick = roiTicks[iroi] + roiTick0s[iroi];
+          if ( tickLast ) {
+            Index period = tick - tickLast;
+            roiPeriods.push_back(period);
+            if ( countPeriod.find(period) == countPeriod.end() ) countPeriod[period] = 0;
+            ++countPeriod[period];
+            ++count;
+            if ( periodMax == 0 ) periodMax = period;
+            else if ( countPeriod[period] > countPeriod[periodMax] ) periodMax = period;
+          }
+          tickLast = tick;
+        }
+        float periodMaxFraction = countPeriod[periodMax]/float(count);
+        string periodName = "roiPeriod" + ssgn;
+        string periodsName = "roiPeriods" + ssgn;
+        string periodMaxName = "roiPeriodMaxFraction" + ssgn;
+        res.setIntVector(periodsName, roiPeriods);       // All period measurements
+        res.setInt(periodName, periodMax);               // Most frequent period
+        res.setFloat(periodMaxName, periodMaxFraction);  // Fraction of periods with most frequent value
+      }
       // Evaluate the sticky-code metrics.
       //    S1 = fraction of codes in most populated bin
       //    S2 = fraction of codes with classic sticky values
       if ( sigHeights[isgn].size() ) {
         string vecname = isgn ? "roiTickMaxs" : "roiTickMins";
         const DataMap::IntVector& roiTicks = resmod.getIntVector(vecname);
-        const DataMap::IntVector& roiTick0s = resmod.getIntVector("roiTick0s");
         map<AdcIndex, Index> adcCounts;   // map of counts for each ADC code
         for ( Index iroi=iroi1; iroi<iroi2; ++iroi ) {
           if ( roiIsPos[iroi] != isgn ) continue;
@@ -495,6 +541,20 @@ processChannelEvent(Index icha, Index ievt) {
                          << " event " << ievt << "." << endl;
   } else {
     cout << myname << "ERROR: roiCount does not appear in output." << endl;
+  }
+  // Fill the tickmod tree.
+  if ( tickPeriod() > 0 ) {
+    FembTestTickModTree& ftt = *tickModTree();
+    ftt.clear();
+    ftt.data().femb = femb();
+    ftt.data().gain = gainIndex();
+    ftt.data().shap = shapingIndex();
+    ftt.data().extp = extPulse();;
+    ftt.data().ntmd = tickPeriod();
+    ftt.data().ped0 = ievt==0 ? acd.pedestal : processChannelEvent(icha, 0).getFloat("pedestal");
+    ftt.data().qexp = 0.001*pulseQe;
+    ftt.data().ievt = ievt;
+    ftt.fill(acd);
   }
   return res;
 }
@@ -1126,9 +1186,10 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
 
 //**********************************************************************
 
-const DataMap& FembTestAnalyzer::processAll() {
+const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
   const string myname = "FembTestAnalyzer::processAll: ";
   if ( allResult.haveInt("ncha") ) return allResult;
+  if ( a_tickPeriod >= 0 ) setTickPeriod(a_tickPeriod);
   Index ncha = nChannel();
   allResult.setInt("ncha", ncha);
   map<string,TH1*> hists;
@@ -1427,6 +1488,29 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
   }
   m_ptreePulse->write();
   return m_ptreePulse.get();
+}
+
+//**********************************************************************
+
+FembTestTickModTree* FembTestAnalyzer::tickModTree() {
+  const string myname = "FembTestAnalyzer::tickModTree: ";
+  if ( m_ptreeTickMod != nullptr ) return m_ptreeTickMod.get();
+  if ( ! isCalib() ) {
+    cout << myname << "Must have calibration for tick mod tree." << endl;
+    return nullptr;
+  }
+  if ( ! haveTools() ) {
+    cout << myname << "ADC processing tools are missing." << endl;
+    return nullptr;
+  }
+  ostringstream ssnam;
+  ssnam << "femb_test_tickmod_femb" << femb() << "_g" << gainIndex()
+          << "_s" << shapingIndex()
+          << "_p" << (extPulse() ? "ext" : "int");
+  if ( ! extClock() ) ssnam << "_cint";
+  string snam = ssnam.str() + ".root";
+  m_ptreeTickMod.reset(new FembTestTickModTree(snam));
+  return m_ptreeTickMod.get();
 }
 
 //**********************************************************************
