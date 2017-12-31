@@ -18,6 +18,10 @@ public:
 
   using ManMap = std::map<std::string, TPadManipulator>;
   using Index = unsigned int;
+  using Name = std::string;
+  using IndexVector = std::vector<Index>;
+  using SelMap = std::map<Name, IndexVector>;
+  using NameMap = std::map<Name, Name>;
 
   FembTestTickModViewer(FembTestTickModTree& a_tmt); 
   FembTestTickModViewer(std::string fname); 
@@ -28,9 +32,17 @@ public:
   Index size() const { return tmt().size(); }
   const FembTestTickModData* read(Index ient) { return tmt().read(ient); }
   bool doDraw() const { return m_doDraw; }
+  Name label() const { return m_label; }
+  const IndexVector& selection(Name selname);
+  Name selectionLabel(Name selname);
+
+  // Setters.
   bool doDraw(bool val) { return m_doDraw = val; }
+  void setLabel(Name a_label) { m_label = a_label; }
   
-  TPadManipulator* draw(std::string sopt ="");
+  // Draw plot sopt for selection selname.
+  // Use sopt="" for help.
+  TPadManipulator* draw(std::string sopt ="", Name selname ="all");
 
 private:
 
@@ -38,6 +50,9 @@ private:
   FembTestTickModTree& m_tmt;
   ManMap m_mans;
   bool m_doDraw =true;
+  Name m_label;
+  SelMap m_sels;     // Selection vectors indexed by name
+  NameMap m_sellabs;  // Selection labels indexed by name
 
   TPadManipulator* draw(TPadManipulator* pman) const;
 };
