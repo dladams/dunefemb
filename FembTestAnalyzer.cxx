@@ -49,20 +49,30 @@ FembTestAnalyzer(opt, a_femb, fpat, a_isCold) {
 //**********************************************************************
 
 FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_isCold)
-: m_opt(CalibOption(opt%100)), m_doDraw(opt>99), m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
+: m_copt(CalibOption(opt%10)), m_ropt(RoiOption((opt%100)/10)), m_doDraw(opt>99),
+  m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
   m_ptreePulse(nullptr), m_ptreeTickMod(nullptr), m_tickPeriod(0),
   m_nChannelEventProcessed(0) {
   const string myname = "FembTestAnalyzer::ctor: ";
+  cout << myname << "  Calib option: " << calibOptionName() << endl;
+  cout << myname << "    ROI option: " << roiOptionName() << endl;
+  cout << myname << "       Do draw: " << (m_doDraw ? "true" : "false") << endl;
   adcModifierNames.push_back("adcPedestalFit");
+  string roiPeakName;
   if ( isNoCalib() ) {
     adcModifierNames.push_back("adcSampleFiller");
-    adcModifierNames.push_back("adcThresholdSignalFinder");
+    roiPeakName = "adcThresholdSignalFinder";
   }
   if ( isHeightCalib() ) {
      adcModifierNames.push_back("fembCalibratorG%GAIN%S%SHAP%%WARM%");
-     adcModifierNames.push_back("keThresholdSignalFinder");
+     roiPeakName = "keThresholdSignalFinder";
   }
-  adcViewerNames.push_back("adcRoiViewer");
+  if ( doPeakRoi() ) {
+    adcModifierNames.push_back(roiPeakName);
+  } else if ( doTickModRoi() ) {
+    adcModifierNames.push_back("tickModSignalFinder");
+  }
+  if ( doRoi() ) adcViewerNames.push_back("adcRoiViewer");
   adcViewerNames.push_back("adcPlotRaw");
   adcViewerNames.push_back("adcPlotRawDist");
   adcViewerNames.push_back("adcPlotPrepared");
@@ -79,7 +89,8 @@ void FembTestAnalyzer::getTools() {
   }
   fixToolNames(adcModifierNames);
   for ( string modname : adcModifierNames ) {
-    auto pmod = ptm->getPrivate<AdcChannelDataModifier>(modname);
+    std::unique_ptr<AdcChannelDataModifier> pmod =
+      ptm->getPrivate<AdcChannelDataModifier>(modname);
     if ( ! pmod ) {
       cout << myname << "Unable to find modifier " << modname << endl;
       adcModifiers.clear();
@@ -160,11 +171,20 @@ int FembTestAnalyzer::setTickPeriod(Index val) {
 
 //**********************************************************************
 
-string FembTestAnalyzer::optionName() const {
+string FembTestAnalyzer::calibOptionName() const {
   if ( isNoCalib()     ) return "OptNoCalib";
   if ( isHeightCalib() ) return "OptHeightCalib";
   if ( isAreaCalib()   ) return "OptAreaCalib";
-  return "OptUnknown";
+  return "OptUnknownCalib";
+}
+
+//**********************************************************************
+
+string FembTestAnalyzer::roiOptionName() const {
+  if ( ! doRoi()      ) return "OptNoRoi";
+  if ( doPeakRoi() )    return "OptPeakRoi";
+  if ( doTickModRoi() ) return "OptTickModRoi";
+  return "OptUnknownRoi";
 }
 
 //**********************************************************************
@@ -230,22 +250,28 @@ processChannelEvent(Index icha, Index ievt) {
   res.setInt("event", ievt);
   const DuneFembReader* prdr = reader();
   if ( prdr == nullptr ) return res.setStatus(1);
+  // Fetch the expected charge for this sample.
   double pulseQfC = chargeFc(ievt);
   double pulseQe = pulseQfC*elecPerFc();
   res.setFloat("nElectron", pulseQe);
+  // Read the raw data.
   AdcChannelData acd;
   acd.run = femb();
   acd.event = ievt;
   acd.channel = icha;
   acd.fembID = femb();
-  // Read raw data.
   reader()->read(ievt, icha, &acd);
-  // Process the data.
+  // Process the data, i.e. subtract pedestal, calibrate, find ROIs, etc.
   DataMap resmod;
   if ( dbg > 2 ) cout << myname << "Applying modifiers." << endl;
   Index imod = 0;
   for ( const std::unique_ptr<AdcChannelDataModifier>& pmod : adcModifiers ) {
     string modName = adcModifierNames[imod];
+    // For the tickmod ROI builder, if we have a tick period, add it to the channel data.
+    if ( modName == "tickModSignalFinder" && tickPeriod() > 0 ) {
+      acd.rois.clear();
+      acd.rois.emplace_back(0, tickPeriod()-1);
+    }
     if ( dbg > 2 ) cout << "Applying modifier " << modName << endl;
     resmod += pmod->update(acd);
     if ( resmod.status() ) {
@@ -260,10 +286,22 @@ processChannelEvent(Index icha, Index ievt) {
     cout << myname << "----------------------------------" << endl;
     resmod.print();
     cout << myname << "----------------------------------" << endl;
+    cout << myname << "ADC data:"  << endl;
+    cout << myname << "     raw: size=" << acd.raw.size()     << endl;
+    cout << myname << " samples: size=" << acd.samples.size() << endl;
+    cout << myname << "   flags: size=" << acd.flags.size()   << endl;
+    cout << myname << "  signal: size=" << acd.signal.size()  << endl;
+    cout << myname << "    rois: size=" << acd.rois.size()    << endl;
+    cout << myname << "----------------------------------" << endl;
   }
   if ( dbg > 2 ) cout << myname << "Applying viewers." << endl;
-  for ( const std::unique_ptr<AdcChannelViewer>& pvwr : adcViewers ) {
-    resmod += pvwr->view(acd);
+  for ( Index ivwr=0; ivwr<adcViewers.size(); ++ivwr ) {
+    string vwrName = adcViewerNames[ivwr];
+    const std::unique_ptr<AdcChannelViewer>& pvwr = adcViewers[ivwr];
+    if ( dbg > 2 ) cout << "Applying viewer " << vwrName << endl;
+    DataMap resvwr = pvwr->view(acd);
+    resmod += resvwr;
+    if ( dbg > 2 ) cout << "Viewer returned status " << resvwr.status() << endl;
   }
   res += resmod;
   if ( dbg >= 2 ) {
@@ -308,14 +346,28 @@ processChannelEvent(Index icha, Index ievt) {
     return res.setStatus(5);
   }
   if ( dbg >= 2 ) cout << myname << "Units for samples are " << sigunit << endl;
+  // Fill the tickmod tree.
+  // This includes finding the tickmods with eht amx and min signals.
+  if ( tickPeriod() > 0 ) {
+    FembTestTickModTree& ftt = *tickModTree();
+    ftt.clear();
+    ftt.data().femb = femb();
+    ftt.data().gain = gainIndex();
+    ftt.data().shap = shapingIndex();
+    ftt.data().extp = extPulse();;
+    ftt.data().ntmd = tickPeriod();
+    ftt.data().ped0 = ievt==0 ? acd.pedestal : processChannelEvent(icha, 0).getFloat("pedestal");
+    ftt.data().qexp = 0.001*pulseQe;
+    ftt.data().ievt = ievt;
+    ftt.fill(acd);
+  }
   // Process the ROIs.
   bool haverois = resmod.haveInt("roiCount");
   Index nroi = haverois ? resmod.getInt("roiCount") : 0;
-  if ( dbg > 2 ) cout << myname << "ROI count is " << nroi << endl;
   if ( nroi ) {
-    vector<float> sigAreas[2];
-    vector<float> sigHeights[2];
-    vector<float> sigCals[2];    // calibrated charge
+    vector<float> sigAreas[2];   // Calibrated area for each signal
+    vector<float> sigHeights[2]; // Calibrated height for each signal
+    vector<float> sigCals[2];    // Calibrated charge (height or area depending on calib option)
     vector<float> sigDevs[2];    // Deviation of calibrated value from expected value
     int sigNundr[2] = {0, 0};
     int sigNover[2] = {0, 0};
@@ -323,47 +375,80 @@ processChannelEvent(Index icha, Index ievt) {
     float areaMax[2] = {0.0, 0.0};
     float heightMin[2] = {1.e9, 1.e9};
     float heightMax[2] = {0.0, 0.0};
-    // Set range of ROIs removing edge ROIs.
+    // Set range of ROIs.
     Index iroi1 = 0;
     Index iroi2 = nroi;
-    Index firstRoiFirstTick = resmod.getIntVector("roiTick0s")[0];
-    Index lastRoiLastTick = resmod.getIntVector("roiTick0s")[nroi-1]
-                          + resmod.getIntVector("roiNTicks")[nroi-1];
-    if ( firstRoiFirstTick <= 0 ) ++iroi1;
-    if ( lastRoiLastTick >= resmod.getInt("roiNTickChannel") ) --iroi2;
+    // Remove edge ROIs for peak ROIs.
+    if ( doPeakRoi() ) {
+      Index firstRoiFirstTick = resmod.getIntVector("roiTick0s")[0];
+      Index lastRoiLastTick = resmod.getIntVector("roiTick0s")[nroi-1]
+                            + resmod.getIntVector("roiNTicks")[nroi-1];
+      if ( firstRoiFirstTick <= 0 ) ++iroi1;
+      if ( lastRoiLastTick >= resmod.getInt("roiNTickChannel") ) --iroi2;
+    }
+    // Remove the short ROI for tickmod ROIs.
+    if ( doTickModRoi() ) {
+      if ( resmod.getIntVector("roiNTicks")[iroi2-1] != tickPeriod() ) --iroi2;
+    }
+    // Flag indicationg if we have a calibrated value.
+    // If so, we will record calibrated values and their deviations from the
+    // true peak charge.
+    bool doCalib = isHeightCalib() || (isAreaCalib() && doPeakRoi());
     // Loop over ROIs and fetch the height and area.
     // Also count the number of ROIs with under and overflow bins.
     // All are done separately for each sign.
     float expSig = 0.001*pulseQe;
     vector<bool> roiIsPos(nroi, false);
+    if ( dbg >= 3 ) cout << myname << "Processing " << nroi << " ROIs." << endl;
     for ( Index iroi=iroi1; iroi<iroi2; ++iroi ) {
+      if ( dbg >= 4 ) cout << myname << "Processing ROI " << iroi << endl;
       float area = resmod.getFloatVector("roiSigAreas")[iroi];
       float sigmin = resmod.getFloatVector("roiSigMins")[iroi];
       float sigmax = resmod.getFloatVector("roiSigMaxs")[iroi];
       int nundr = resmod.getIntVector("roiNUnderflows")[iroi];
       int nover = resmod.getIntVector("roiNOverflows")[iroi];
-      Index isPos = area >= 0.0;
-      roiIsPos[iroi] = isPos;
-      float sign = isPos ? 1.0 : -1.0;
-      area *= sign;
-      float height = isPos ? sigmax : -sigmin;
-      sigAreas[isPos].push_back(area);
-      sigHeights[isPos].push_back(height);
-      if ( nundr > 0 ) ++sigNundr[isPos];
-      if ( nover > 0 ) ++sigNover[isPos];
-      if ( area < areaMin[isPos] ) areaMin[isPos] = area;
-      if ( area > areaMax[isPos] ) areaMax[isPos] = area;
-      if ( height < heightMin[isPos] ) heightMin[isPos] = height;
-      if ( height > heightMax[isPos] ) heightMax[isPos] = height;
-      if ( isCalib() ) {
-        float qcal = 0.0;
-        if ( isHeightCalib() ) qcal = height;
-        if ( isAreaCalib() )   qcal = area;
-        qcal *= sign;
-        sigCals[isPos].push_back(qcal);
-        float dev = -999.0;
-        if ( isCalib() ) dev = sign*(qcal - sign*expSig);
-        sigDevs[isPos].push_back(dev);
+      if ( dbg >= 5 ) {
+        cout << myname << "  Min height: " << sigmin << endl;
+        cout << myname << "  Max height: " << sigmax << endl;
+        cout << myname << "        Area: " << area << endl;
+      }
+      vector<bool> isPoss;
+      // Build vector of signs.
+      // For peak ROIs, there is only one based on the area.
+      // For tickmod ROIS, we have both signs
+      if ( doPeakRoi() ) isPoss.push_back(area >= 0.0);
+      else if ( doTickModRoi() ) {
+        isPoss.push_back(false);
+        isPoss.push_back(true);
+      }
+      // Loop over signs.
+      for ( bool isPos : isPoss ) {
+        roiIsPos[iroi] = isPos;
+        float sign = isPos ? 1.0 : -1.0;
+        area *= sign;
+        float height = isPos ? sigmax : -sigmin;
+        if ( nundr > 0 ) ++sigNundr[isPos];
+        if ( nover > 0 ) ++sigNover[isPos];
+        // Area only for peak ROIs (for now)
+        if ( doPeakRoi() ) {
+          sigAreas[isPos].push_back(area);
+          if ( area < areaMin[isPos] ) areaMin[isPos] = area;
+          if ( area > areaMax[isPos] ) areaMax[isPos] = area;
+        }
+        sigHeights[isPos].push_back(height);
+        if ( height < heightMin[isPos] ) heightMin[isPos] = height;
+        if ( height > heightMax[isPos] ) heightMax[isPos] = height;
+        // Calib value and its deviation.
+        if ( doCalib ) {
+          float qcal = 0.0;
+          if ( isHeightCalib() ) qcal = height;
+          if ( isAreaCalib() )   qcal = area;
+          qcal *= sign;
+          sigCals[isPos].push_back(qcal);
+          float dev = -999.0;
+          if ( isCalib() ) dev = sign*(qcal - sign*expSig);
+          sigDevs[isPos].push_back(dev);
+        }
       }
     }
     // For each sign...
@@ -395,8 +480,11 @@ processChannelEvent(Index icha, Index ievt) {
         res.setFloat(meanName, ph->GetMean());
         res.setFloat(rmsName, ph->GetRMS());
       } else {
-        cout << myname << "No " + ssgn + " area ROIS " + " for channel " << icha
-             << " event " << ievt << endl;
+        // We don't expect these for tickmod ROIs.
+        if ( ! doTickModRoi() ) {
+          cout << myname << "No " + ssgn + " area ROIs " + " for channel " << icha
+               << " event " << ievt << endl;
+        }
       }
       // Build height histogram. Record it and its mean and RMS.
       if ( sigHeights[isgn].size() ) {
@@ -539,22 +627,8 @@ processChannelEvent(Index icha, Index ievt) {
   } else if ( haverois ) {
     if ( ievt > 1 ) cout << myname << "ERROR: No ROIs found for channel " << icha
                          << " event " << ievt << "." << endl;
-  } else {
-    cout << myname << "ERROR: roiCount does not appear in output." << endl;
-  }
-  // Fill the tickmod tree.
-  if ( tickPeriod() > 0 ) {
-    FembTestTickModTree& ftt = *tickModTree();
-    ftt.clear();
-    ftt.data().femb = femb();
-    ftt.data().gain = gainIndex();
-    ftt.data().shap = shapingIndex();
-    ftt.data().extp = extPulse();;
-    ftt.data().ntmd = tickPeriod();
-    ftt.data().ped0 = ievt==0 ? acd.pedestal : processChannelEvent(icha, 0).getFloat("pedestal");
-    ftt.data().qexp = 0.001*pulseQe;
-    ftt.data().ievt = ievt;
-    ftt.fill(acd);
+  } else if ( doRoi() ) {
+    cout << myname << "ERROR: It appears no ROI finder was run (no roiCount in result)." << endl;
   }
   return res;
 }
@@ -579,6 +653,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     cout << myname << "ADC processing tools are missing." << endl;
     return DataMap(3);
   }
+  // Note that we have to proceed without ROIs because we want to record peds and nkes
   bool pulseIsExternal = prdr->extPulse();
   if ( pulseIsExternal ) ievt0 = 1;
   bool useBoth = usePosOpt == "Both";
@@ -631,7 +706,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     float nele = resevt.getFloat("nElectron");
     float nkele = 0.001*nele;
     nkeles[ievt] = nkele;
-    if ( ievt > ievt0 ) {
+    if ( ievt > ievt0 && doRoi() ) {
       for ( bool usePos : usePosValues ) {
         string ssgn = usePos ? "Pos" : "Neg";
         string meaName = "sig" + styp + "Mean" + ssgn;
@@ -691,12 +766,19 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
         }
       }
     } else {
-      for ( bool usePos : usePosValues ) {
-        sticky1[usePos].push_back(-3.0);
-        sticky2[usePos].push_back(-3.0);
+      if ( doRoi() ) {
+        for ( bool usePos : usePosValues ) {
+          sticky1[usePos].push_back(-3.0);
+          sticky2[usePos].push_back(-3.0);
+        }
       }
     }
   }
+  res.setInt("channel", icha);
+  res.setFloatVector("peds", peds);
+  res.setFloatVector("nkes", nkeles);
+  // Ther rest can be skipped if we do ROIs.
+  if ( ! doRoi() )  return res;
   // Sort the reponse arrays.
   map<float, int> iptOrderMap;
   for ( Index ipt=0; ipt<x.size(); ++ipt ) iptOrderMap[x[ipt]] = ipt;
@@ -728,9 +810,6 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       cout << setw(4) << ipt << setw(wf) << x[ipt] << setw(wf) << y[ipt] << setw(wf) << fitkeep[ipt] << endl;
     }
   }
-  res.setInt("channel", icha);
-  res.setFloatVector("peds", peds);
-  res.setFloatVector("nkes", nkeles);
   for ( bool usePos : usePosValues ) {
     string ssgn = usePos ? "Pos" : "Neg";
     res.setFloatVector("sticky1" + ssgn + "s", sticky1[usePos]);
@@ -1083,6 +1162,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
 
 DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
   const string myname = "FembTestAnalyzer::getChannelDeviations: ";
+  if ( ! doRoi() ) {
+    cout << myname << "ROIs are required." << endl;
+    return DataMap(1);
+  }
   ostringstream sscha;
   sscha << icha;
   string scha = sscha.str();
@@ -1143,44 +1226,53 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
     cout << myname << "ADC processing tools are missing." << endl;
     return res.setStatus(3);
   }
-  bool useBoth = true;
-  if ( useBoth ) {
-    res += getChannelResponse(icha, "Both",  true);
-    res += getChannelResponse(icha, "Both", false);
+  vector<string> ssgns;
+  if ( true ) {
+    ssgns.push_back("Both");
   } else {
-    res += getChannelResponse(icha, "Pos",  true);
-    res += getChannelResponse(icha, "Neg",  true);
-    res += getChannelResponse(icha, "Pos", false);
-    res += getChannelResponse(icha, "Neg", false);
+    ssgns.push_back("Pos");
+    ssgns.push_back("Neg");
   }
-  if ( isCalib() ) res += getChannelDeviations(icha);
-  // Create pedestal graph.
-  const DataMap::FloatVector& nkes = res.getFloatVector("nkes");
-  const DataMap::FloatVector& peds = res.getFloatVector("peds");
-  Index npt = nkes.size();
-  string gnamp = "gchaPeds";
-  ostringstream ssttl;
-  ssttl << "Pedestals for channel " << icha;
-  string gttl = ssttl.str();
-  TGraph* pgp = new TGraph(npt, &nkes[0], &peds[0]);
-  pgp->SetName(gnamp.c_str());
-  pgp->SetTitle(gttl.c_str());
-  pgp->SetLineWidth(2);
-  pgp->GetXaxis()->SetTitle("Input charge [ke]");
-  pgp->GetYaxis()->SetTitle("Pedestal [ADC]");
-  float pedMin = peds[0];
-  float pedMax = pedMin;
-  for ( float ped : peds ) {
-    if ( ped < pedMin ) pedMin = ped;
-    if ( ped > pedMax ) pedMax = ped;
+  vector<bool> useAreas;
+  useAreas.push_back(false);
+  if ( ! doTickModRoi() ) useAreas.push_back(true);
+  if ( true ) {
+    for ( string ssgn : ssgns ) {
+      for ( bool useArea : useAreas ) {
+        res += getChannelResponse(icha, ssgn, useArea);
+      }
+    }
+    if ( isCalib() && doPeakRoi() ) res += getChannelDeviations(icha);
   }
-  float ymax = 10*int(pedMax/10.0+1.2);
-  float ymin = 10*int(pedMin/10.0);
-  if ( (ymax - ymin) < 50.0 ) ymin = ymax - 50.0;
-  pgp->GetYaxis()->SetRangeUser(ymin, ymax);
-  res.setFloat("pedMin", pedMin);
-  res.setFloat("pedMax", pedMax);
-  res.setGraph(gnamp, pgp);
+  if ( true ) {
+    // Create pedestal graph.
+    const DataMap::FloatVector& nkes = res.getFloatVector("nkes");
+    const DataMap::FloatVector& peds = res.getFloatVector("peds");
+    Index npt = nkes.size();
+    string gnamp = "gchaPeds";
+    ostringstream ssttl;
+    ssttl << "Pedestals for channel " << icha;
+    string gttl = ssttl.str();
+    TGraph* pgp = new TGraph(npt, &nkes[0], &peds[0]);
+    pgp->SetName(gnamp.c_str());
+    pgp->SetTitle(gttl.c_str());
+    pgp->SetLineWidth(2);
+    pgp->GetXaxis()->SetTitle("Input charge [ke]");
+    pgp->GetYaxis()->SetTitle("Pedestal [ADC]");
+    float pedMin = peds[0];
+    float pedMax = pedMin;
+    for ( float ped : peds ) {
+      if ( ped < pedMin ) pedMin = ped;
+      if ( ped > pedMax ) pedMax = ped;
+    }
+    float ymax = 10*int(pedMax/10.0+1.2);
+    float ymin = 10*int(pedMin/10.0);
+    if ( (ymax - ymin) < 50.0 ) ymin = ymax - 50.0;
+    pgp->GetYaxis()->SetRangeUser(ymin, ymax);
+    res.setFloat("pedMin", pedMin);
+    res.setFloat("pedMax", pedMax);
+    res.setGraph(gnamp, pgp);
+  }
   return res;
 }
 
@@ -1192,105 +1284,15 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
   if ( a_tickPeriod >= 0 ) setTickPeriod(a_tickPeriod);
   Index ncha = nChannel();
   allResult.setInt("ncha", ncha);
-  map<string,TH1*> hists;
-  // Histograms for area/height and pos/neg combos.
-  TH1* phsatMin = nullptr;
-  TH1* phsatMax = nullptr;
-  bool useBoth = true;
-  vector<string> posValues;
-  if ( useBoth ) {
-    posValues.push_back("Both");
-  } else {
-    posValues.push_back("Neg");
-    posValues.push_back("Pos");
-  }
-  // Loop over types (height and area)
-  for ( bool useArea : {false, true} ) {
-    string sarea = useArea ? "Area" : "Height";
-    // Loop over signs (pos, neg or both)
-    for ( string spos : posValues ) {
-      string hnam = "hgain" + sarea + spos;
-      string httl = sarea + " " + spos + " Gain; Channel; Gain [ADC/ke]";
-      TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-      hists[hnam] = phg;
-      string hnamd = "hgaindist" + sarea + spos;
-      string httld = sarea + " " + spos + " Gain; Gain [ADC/ke]; # channels";
-      TH1* phgd = new TH1F(hnamd.c_str(), httld.c_str(), 100, 0, -1);
-      hists[hnamd] = phgd;
-      // Deviation histograms.
-      string hnamRms = "hall" + sarea + spos + "Rms";
-      string hnamArs = "hall" + sarea + spos + "Ars";
-      string hnamGms = "hall" + sarea + spos + "Gms";
-      TH1* phRms = nullptr;
-      TH1* phArs = nullptr;
-      TH1* phGms = nullptr;
-      // Histogram saturation for negative pulse height.
-      if ( !useArea ) {
-        hnam = "hsatMin" + sarea + spos;
-        httl = sarea + " " + spos + " Lower saturation level; Channel; Saturation level [ADC]";
-        phsatMin = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-        hists[hnam] = phsatMin;
-        hnam = "hsatMax" + sarea + spos;
-        httl = sarea + " " + spos + " Upper saturation level; Channel; Saturation level [ADC]";
-        phsatMax = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-        hists[hnam] = phsatMax;
-      }
-      // Loop over channels.
-      for ( Index icha=0; icha<ncha; ++icha ) {
-cout << myname << "Channel " << icha << endl;
-        string fnam = "fitGain" + sarea + spos;
-        string fenam = fnam + "Unc";
-        const DataMap& resc = processChannel(icha);
-        float gain = resc.getFloat(fnam);
-        phg->SetBinContent(icha+1, gain);
-        phg->SetBinError(icha+1, resc.getFloat(fenam));
-        phgd->Fill(gain);
-        if ( phsatMin != nullptr ) {
-          fnam = "fitSaturationMinHeight" + spos;
-          if ( resc.haveFloat(fnam) ) {
-            phsatMin->SetBinContent(icha+1, resc.getFloat(fnam));
-          }
-        }
-        if ( phsatMax != nullptr ) {
-          fnam = "fitSaturationMaxHeight" + spos;
-          if ( resc.haveFloat(fnam) ) {
-            phsatMax->SetBinContent(icha+1, resc.getFloat(fnam));
-          }
-        }
-        // Fill RMS histos.
-        string hnamChaRms = "hchaResp" + sarea + spos + "Rms";
-        string hnamChaArs = "hchaResp" + sarea + spos + "Ars";
-        string hnamChaGms = "hchaResp" + sarea + spos + "Gms";
-        TH1* pheRms = resc.getHist(hnamChaRms);
-        TH1* pheArs = resc.getHist(hnamChaArs);
-        TH1* pheGms = resc.getHist(hnamChaGms);
-        if ( phRms == nullptr && pheRms != nullptr ) {
-          phRms = dynamic_cast<TH1*>(pheRms->Clone(hnamRms.c_str()));
-          string httl = sarea + " " + spos + " local RMS";
-          phRms->SetTitle(httl.c_str());
-        } else {
-          phRms->Add(pheRms);
-        }
-        if ( phArs == nullptr && pheArs != nullptr ) {
-          phArs = dynamic_cast<TH1*>(pheArs->Clone(hnamArs.c_str()));
-          string httl = sarea + " " + spos + " residual";
-          phArs->SetTitle(httl.c_str());
-        } else {
-          phArs->Add(pheArs);
-        }
-        if ( phGms == nullptr && pheGms != nullptr ) {
-          phGms = dynamic_cast<TH1*>(pheGms->Clone(hnamGms.c_str()));
-          string httl = sarea + " " + spos + " global RMS";
-          phGms->SetTitle(httl.c_str());
-        } else {
-          phGms->Add(pheGms);
-        }
-      }
-      hists[hnamRms] = phRms;
-      hists[hnamArs] = phArs;
-      hists[hnamGms] = phGms;
+  // Process all channels and check for errors.
+  for ( Index icha=0; icha<ncha; ++icha ) {
+    cout << myname << "Channel " << icha << endl;
+    const DataMap& resc = processChannel(icha);
+    if ( resc ) {
+      cout << myname << "Processing of channel " << icha << " returns error " << resc.status() << endl;
     }
   }
+  map<string,TH1*> hists;
   // Pedestal histogram.
   string hnam = "hchaPed";
   ostringstream ssfemb;
@@ -1308,107 +1310,206 @@ cout << myname << "Channel " << icha << endl;
     php->SetBinError(icha+1, dy);
   }
   hists[hnam] = php;
-  // Underflow histogram.
-  // This is the ADC value at which each channel saturates for negative signals.
-  hnam = "hchaAdcMin";
-  httl = "ADC saturation; Channel; Lower saturation [ADC]";
-  TH1* phu = nullptr;
-  if ( phsatMin == nullptr ) {
-    phu = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
-  } else {
-    phu = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-    double addfac = useBoth ? 1.0 : -1.0;
-    for ( Index icha=0; icha<ncha; ++icha ) {
-      double val = 0.0;
-      double dval = 0.0;
-      double satmin = phsatMin->GetBinContent(icha+1);
-      if ( satmin ) {
-        double ped = php->GetBinContent(icha+1);
-        double dped = php->GetBinError(icha+1);
-        double satval = ped + addfac*satmin;
-        if ( satval > val ) {
-          val = satval;
-          dval = dped;
-        }
-      }
-      phu->SetBinContent(icha+1, val);
-      phu->SetBinError(icha+1, dval);
+  if ( doRoi() ) {
+    // Histograms for area/height and pos/neg combos.
+    TH1* phsatMin = nullptr;
+    TH1* phsatMax = nullptr;
+    bool useBoth = true;
+    vector<string> posValues;
+    if ( useBoth ) {
+      posValues.push_back("Both");
+    } else {
+      posValues.push_back("Neg");
+      posValues.push_back("Pos");
     }
-  }
-  if ( phu != nullptr ) {
-    int icol = 17;
-    phu->SetLineColor(icol);
-    phu->SetMarkerColor(icol);
-    phu->SetFillColor(icol);
-    hists[hnam] = phu;
-  }
-  // Overflow histogram.
-  // This is the ADC value at which each channel saturates for negative signals.
-  hnam = "hchaAdcMax";
-  httl = "ADC saturation; Channel; Upper saturation [ADC]";
-  TH1* pho = nullptr;
-  if ( phsatMax == nullptr ) {
-    pho = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
-  } else {
-    pho = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-    for ( Index icha=0; icha<ncha; ++icha ) {
-      double val = 4096;
-      double dval = 0.0;
-      double satmax = phsatMax->GetBinContent(icha+1);
-      if ( satmax ) {
-        double ped = php->GetBinContent(icha+1);
-        double dped = php->GetBinError(icha+1);
-        double satval = ped + satmax;
-        if ( satval < val ) {
-          val = satval;
-          dval = dped;
+    // Loop over types (height and area)
+    for ( bool useArea : {false, true} ) {
+      string sarea = useArea ? "Area" : "Height";
+      // Loop over signs (pos, neg or both)
+      for ( string spos : posValues ) {
+        string hnam = "hgain" + sarea + spos;
+        string httl = sarea + " " + spos + " Gain; Channel; Gain [ADC/ke]";
+        TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+        hists[hnam] = phg;
+        string hnamd = "hgaindist" + sarea + spos;
+        string httld = sarea + " " + spos + " Gain; Gain [ADC/ke]; # channels";
+        TH1* phgd = new TH1F(hnamd.c_str(), httld.c_str(), 100, 0, -1);
+        hists[hnamd] = phgd;
+        // Deviation histograms.
+        string hnamRms = "hall" + sarea + spos + "Rms";
+        string hnamArs = "hall" + sarea + spos + "Ars";
+        string hnamGms = "hall" + sarea + spos + "Gms";
+        TH1* phRms = nullptr;
+        TH1* phArs = nullptr;
+        TH1* phGms = nullptr;
+        // Histogram saturation for negative pulse height.
+        if ( !useArea ) {
+          hnam = "hsatMin" + sarea + spos;
+          httl = sarea + " " + spos + " Lower saturation level; Channel; Saturation level [ADC]";
+          phsatMin = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+          hists[hnam] = phsatMin;
+          hnam = "hsatMax" + sarea + spos;
+          httl = sarea + " " + spos + " Upper saturation level; Channel; Saturation level [ADC]";
+          phsatMax = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+          hists[hnam] = phsatMax;
         }
+        // Loop over channels.
+        for ( Index icha=0; icha<ncha; ++icha ) {
+          string fnam = "fitGain" + sarea + spos;
+          string fenam = fnam + "Unc";
+          const DataMap& resc = processChannel(icha);
+          float gain = resc.getFloat(fnam);
+          phg->SetBinContent(icha+1, gain);
+          phg->SetBinError(icha+1, resc.getFloat(fenam));
+          phgd->Fill(gain);
+          if ( phsatMin != nullptr ) {
+            fnam = "fitSaturationMinHeight" + spos;
+            if ( resc.haveFloat(fnam) ) {
+              phsatMin->SetBinContent(icha+1, resc.getFloat(fnam));
+            }
+          }
+          if ( phsatMax != nullptr ) {
+            fnam = "fitSaturationMaxHeight" + spos;
+            if ( resc.haveFloat(fnam) ) {
+              phsatMax->SetBinContent(icha+1, resc.getFloat(fnam));
+            }
+          }
+          // Fill RMS histos.
+          string hnamChaRms = "hchaResp" + sarea + spos + "Rms";
+          string hnamChaArs = "hchaResp" + sarea + spos + "Ars";
+          string hnamChaGms = "hchaResp" + sarea + spos + "Gms";
+          TH1* pheRms = resc.getHist(hnamChaRms);
+          TH1* pheArs = resc.getHist(hnamChaArs);
+          TH1* pheGms = resc.getHist(hnamChaGms);
+          if ( phRms == nullptr && pheRms != nullptr ) {
+            phRms = dynamic_cast<TH1*>(pheRms->Clone(hnamRms.c_str()));
+            string httl = sarea + " " + spos + " local RMS";
+            phRms->SetTitle(httl.c_str());
+          } else {
+            phRms->Add(pheRms);
+          }
+          if ( phArs == nullptr && pheArs != nullptr ) {
+            phArs = dynamic_cast<TH1*>(pheArs->Clone(hnamArs.c_str()));
+            string httl = sarea + " " + spos + " residual";
+            phArs->SetTitle(httl.c_str());
+          } else {
+            phArs->Add(pheArs);
+          }
+          if ( phGms == nullptr && pheGms != nullptr ) {
+            phGms = dynamic_cast<TH1*>(pheGms->Clone(hnamGms.c_str()));
+            string httl = sarea + " " + spos + " global RMS";
+            phGms->SetTitle(httl.c_str());
+          } else {
+            phGms->Add(pheGms);
+          }
+        }
+        hists[hnamRms] = phRms;
+        hists[hnamArs] = phArs;
+        hists[hnamGms] = phGms;
       }
-      pho->SetBinContent(icha+1, val);
-      pho->SetBinError(icha+1, dval);
     }
-  }
-  if ( pho != nullptr ) {
-    int icol = 17;
-    pho->SetLineColor(icol);
-    pho->SetMarkerColor(icol);
-    pho->SetFillColor(icol);
-    hists[hnam] = pho;
-  }
-  // Signal deviation histograms.
-  if ( isCalib() ) {
-    TH1* phdev = nullptr;
-    TH1* phadv = nullptr;
-    for ( Index icha=0; icha<ncha; ++icha ) {
-      const DataMap& resevt = processChannel(icha);
-      for ( string hnam : {"hdev", "hadv"} ) {
-        if ( ! resevt.haveHist(hnam) ) {
-          cout << myname << "Result for channel " << icha << " does not have histogram "
-               << hnam << endl;
-          continue;
+    // Underflow histogram.
+    // This is the ADC value at which each channel saturates for negative signals.
+    hnam = "hchaAdcMin";
+    httl = "ADC saturation; Channel; Lower saturation [ADC]";
+    TH1* phu = nullptr;
+    if ( phsatMin == nullptr ) {
+      phu = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
+    } else {
+      phu = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+      double addfac = useBoth ? 1.0 : -1.0;
+      for ( Index icha=0; icha<ncha; ++icha ) {
+        double val = 0.0;
+        double dval = 0.0;
+        double satmin = phsatMin->GetBinContent(icha+1);
+        if ( satmin ) {
+          double ped = php->GetBinContent(icha+1);
+          double dped = php->GetBinError(icha+1);
+          double satval = ped + addfac*satmin;
+          if ( satval > val ) {
+            val = satval;
+            dval = dped;
+          }
         }
+        phu->SetBinContent(icha+1, val);
+        phu->SetBinError(icha+1, dval);
       }
-      TH1* phdevCha = resevt.getHist("hdev");
-      TH1* phadvCha = resevt.getHist("hadv");
-      if ( phdev == nullptr ) {
-        phdev = dynamic_cast<TH1*>(phdevCha->Clone("hdev"));
-        phadv = dynamic_cast<TH1*>(phadvCha->Clone("hadv"));
-        for ( TH1* ph : {phdev, phadv} ) {
-          ph->SetDirectory(nullptr);
-          ph->SetLineWidth(2);
-          ph->Reset();
-        }
-      }
-      string sttlDev = calibName(true) + " deviation for FEMB " + sfemb;
-      string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
-      phdev->SetTitle(sttlDev.c_str());
-      phadv->SetTitle(sttlAdv.c_str());
-      phdev->Add(phdevCha);
-      phadv->Add(phadvCha);
     }
-    allResult.setHist(phdev, true);
-    allResult.setHist(phadv, true);
-  }
+    if ( phu != nullptr ) {
+      int icol = 17;
+      phu->SetLineColor(icol);
+      phu->SetMarkerColor(icol);
+      phu->SetFillColor(icol);
+      hists[hnam] = phu;
+    }
+    // Overflow histogram.
+    // This is the ADC value at which each channel saturates for negative signals.
+    hnam = "hchaAdcMax";
+    httl = "ADC saturation; Channel; Upper saturation [ADC]";
+    TH1* pho = nullptr;
+    if ( phsatMax == nullptr ) {
+      pho = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
+    } else {
+      pho = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+      for ( Index icha=0; icha<ncha; ++icha ) {
+        double val = 4096;
+        double dval = 0.0;
+        double satmax = phsatMax->GetBinContent(icha+1);
+        if ( satmax ) {
+          double ped = php->GetBinContent(icha+1);
+          double dped = php->GetBinError(icha+1);
+          double satval = ped + satmax;
+          if ( satval < val ) {
+            val = satval;
+            dval = dped;
+          }
+        }
+        pho->SetBinContent(icha+1, val);
+        pho->SetBinError(icha+1, dval);
+      }
+    }
+    if ( pho != nullptr ) {
+      int icol = 17;
+      pho->SetLineColor(icol);
+      pho->SetMarkerColor(icol);
+      pho->SetFillColor(icol);
+      hists[hnam] = pho;
+    }
+    // Signal deviation histograms.
+    if ( isCalib() ) {
+      TH1* phdev = nullptr;
+      TH1* phadv = nullptr;
+      for ( Index icha=0; icha<ncha; ++icha ) {
+        const DataMap& resevt = processChannel(icha);
+        for ( string hnam : {"hdev", "hadv"} ) {
+          if ( ! resevt.haveHist(hnam) ) {
+            cout << myname << "Result for channel " << icha << " does not have histogram "
+                 << hnam << endl;
+            continue;
+          }
+        }
+        TH1* phdevCha = resevt.getHist("hdev");
+        TH1* phadvCha = resevt.getHist("hadv");
+        if ( phdev == nullptr ) {
+          phdev = dynamic_cast<TH1*>(phdevCha->Clone("hdev"));
+          phadv = dynamic_cast<TH1*>(phadvCha->Clone("hadv"));
+          for ( TH1* ph : {phdev, phadv} ) {
+            ph->SetDirectory(nullptr);
+            ph->SetLineWidth(2);
+            ph->Reset();
+          }
+        }
+        string sttlDev = calibName(true) + " deviation for FEMB " + sfemb;
+        string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
+        phdev->SetTitle(sttlDev.c_str());
+        phadv->SetTitle(sttlAdv.c_str());
+        phdev->Add(phdevCha);
+        phadv->Add(phadvCha);
+      }
+      allResult.setHist(phdev, true);
+      allResult.setHist(phadv, true);
+    }
+  }  // end if doRoi()
   // Record histograms.
   for ( auto ient : hists ) {
     TH1* ph = ient.second;
@@ -1518,7 +1619,7 @@ FembTestTickModTree* FembTestAnalyzer::tickModTree() {
 int FembTestAnalyzer::writeCalibFcl() {
   const string myname = "FembTestAnalyzer::writeCalibFcl: ";
   if ( ! isNoCalib() ) {
-    cout << myname << "Invalid calibration option: " << optionName() << endl;
+    cout << myname << "Invalid calibration option: " << calibOptionName() << endl;
     return 1;
   }
   string sclass = "FembLinearCalibration";
@@ -1600,29 +1701,32 @@ int FembTestAnalyzer::writeCalibFcl() {
 TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
   const string myname = "FembTestAnalyzer::draw: ";
   if ( sopt == "help" ) {
-    cout << myname << "     draw(\"raw\", ich, iev) - Raw ADC data for channel ich event iev" << endl;
-    cout << myname << "     draw(\"ped\", ich, iev) - Pedestal for channel ich event iev" << endl;
-    cout << myname << "          draw(\"ped\", ich) - Pedestal vs. Qin for channel ich" << endl;
-    cout << myname << "               draw(\"ped\") - Pedestal vs. channel" << endl;
-    cout << myname << "            draw(\"pedlim\") - Pedestal vs. channel with ADC ranges" << endl;
-    cout << myname << "              draw(\"rmsh\") - Height deviations." << endl;
-    cout << myname << "              draw(\"rmsa\") - Height deviations." << endl;
-    cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
-    cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
-    cout << myname << "               draw(\"dev\") - ADC calibration deviations" << endl;
-    cout << myname << "               draw(\"adv\") - ADC calibration deviation magnitudes" << endl;
-    cout << myname << "        draw(\"resph\", ich) - ADC height vs. Qin for channel ich" << endl;
-    cout << myname << "        draw(\"respa\", ich) - ADC area vs. Qin for channel ich" << endl;
-    cout << myname << "     draw(\"respresh\", ich) - ADC height residual vs. Qin for channel ich" << endl;
-    cout << myname << "     draw(\"respresa\", ich) - ADC area residual vs. Qin for channel ich" << endl;
-    cout << myname << "          draw(\"dev\", ich) - ADC calibration deviations for channel ich" << endl;
-    cout << myname << "          draw(\"adv\", ich) - ADC calibration deviation magnitudes for channel ich" << endl;
-    cout << myname << "  draw(\"resphp\", ich, iev) - ADC positive height distribution for channel ich event iev" << endl;
-    cout << myname << "  draw(\"resphn\", ich, iev) - ADC negative height distribution for channel ich event iev" << endl;
-    cout << myname << "  draw(\"respap\", ich, iev) - ADC positive area distribution for channel ich event iev" << endl;
-    cout << myname << "  draw(\"respan\", ich, iev) - ADC negative area distribution for channel ich event iev" << endl;
-    cout << myname << "    draw(\"devp\", ich, iev) - Deviation from calibration for channel ich event iev" << endl;
-    cout << myname << "    draw(\"devn\", ich, iev) - Deviation from calibration for channel ich event iev" << endl;
+    cout << myname <<   "     draw(\"raw\", ich, iev) - Raw ADC data for channel ich event iev" << endl;
+    cout << myname <<   "    draw(\"prep\", ich, iev) - Prepared ADC data for channel ich event iev" << endl;
+    cout << myname <<   "     draw(\"ped\", ich, iev) - Pedestal for channel ich event iev" << endl;
+    cout << myname <<   "          draw(\"ped\", ich) - Pedestal vs. Qin for channel ich" << endl;
+    cout << myname <<   "               draw(\"ped\") - Pedestal vs. channel" << endl;
+    if ( doRoi() ) {
+      cout << myname << "            draw(\"pedlim\") - Pedestal vs. channel with ADC ranges" << endl;
+      cout << myname << "              draw(\"rmsh\") - Height deviations." << endl;
+      cout << myname << "              draw(\"rmsa\") - Height deviations." << endl;
+      cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
+      cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
+      cout << myname << "               draw(\"dev\") - ADC calibration deviations" << endl;
+      cout << myname << "               draw(\"adv\") - ADC calibration deviation magnitudes" << endl;
+      cout << myname << "        draw(\"resph\", ich) - ADC height vs. Qin for channel ich" << endl;
+      cout << myname << "        draw(\"respa\", ich) - ADC area vs. Qin for channel ich" << endl;
+      cout << myname << "     draw(\"respresh\", ich) - ADC height residual vs. Qin for channel ich" << endl;
+      cout << myname << "     draw(\"respresa\", ich) - ADC area residual vs. Qin for channel ich" << endl;
+      cout << myname << "          draw(\"dev\", ich) - ADC calibration deviations for channel ich" << endl;
+      cout << myname << "          draw(\"adv\", ich) - ADC calibration deviation magnitudes for channel ich" << endl;
+      cout << myname << "  draw(\"resphp\", ich, iev) - ADC positive height distribution for channel ich event iev" << endl;
+      cout << myname << "  draw(\"resphn\", ich, iev) - ADC negative height distribution for channel ich event iev" << endl;
+      cout << myname << "  draw(\"respap\", ich, iev) - ADC positive area distribution for channel ich event iev" << endl;
+      cout << myname << "  draw(\"respan\", ich, iev) - ADC negative area distribution for channel ich event iev" << endl;
+      cout << myname << "    draw(\"devp\", ich, iev) - Deviation from calibration for channel ich event iev" << endl;
+      cout << myname << "    draw(\"devn\", ich, iev) - Deviation from calibration for channel ich event iev" << endl;
+    }
     return nullptr;
   }
   //using Fun = TPadManipulator* (*)(TPadManipulator&);
@@ -1671,9 +1775,14 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       TH1* ph1 = processAll().getHist("hchaAdcMin");
       TH1* ph2 = processAll().getHist("hchaAdcMax");
       TH1* php = processAll().getHist("hchaPed");
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       if ( php == nullptr || ph1 == nullptr || ph2 == nullptr ) {
         cout << myname << "Unable to find hchaAdcMin, hchaAdcMax or hchaPed in this result:" << endl;
         processAll().print();
+        return nullptr;
       } else if ( int rstat = man.add(ph2, "H") ) {
         cout << myname << "Manipulator returned error " << rstat << endl;
       } else {
@@ -1693,6 +1802,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
     // Gain vs. channel.
     } else if ( sopt == "gainh" || sopt == "gaina" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       bool useArea = sopt == "gaina";
       string sarea = useArea ? "area" : "height";
       string hname = useArea ? "hgainAreaBoth" : "hgainHeightBoth";
@@ -1719,6 +1832,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
     // Deviations.
     } else if ( sopt == "rmsh" || sopt == "rmsa" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       string hnamdev = sopt == "rmsh" ? "hallHeightBothGms" : "hallAreaBothGms";
       string hnamrms = sopt == "rmsh" ? "hallHeightBothRms" : "hallAreaBothRms";
       string hnamars = sopt == "rmsh" ? "hallHeightBothArs" : "hallAreaBothArs";
@@ -1767,6 +1884,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       man.hist()->SetTitle(ssttl.str().c_str());
       return draw(&man);
     } else if ( sopt == "dev" || sopt == "adv" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       if ( ! isCalib() ) {
         cout << myname << "Drawing " << sopt << " is only available for calibrated samples." << endl;
         return nullptr;
@@ -1820,6 +1941,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
                 sopt == "respa" ||
                 sopt == "respresh" ||
                 sopt == "respresa" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Response plots require ROIs" << endl;
+        return nullptr;
+      }
       vector<string> gnams;
       double ymin = -1500;
       double ymax = 3000;
@@ -1872,6 +1997,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
     } else if ( sopt == "dev" || 
                 sopt == "adv" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       if ( ! isCalib() ) {
         cout << myname << "Drawing " << sopt << " is only available for calibrated samples." << endl;
         return nullptr;
@@ -1926,6 +2055,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
     } else if ( sopt == "resphp" || sopt == "resphn" ||
                 sopt == "respap" || sopt == "respan" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       const DataMap& res = processChannelEvent(icha, ievt);
       string hname = sopt == "resphp" ? "hsigHeightPos" :
                      sopt == "resphn" ? "hsigHeightNeg" :
@@ -1945,6 +2078,10 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         return draw(&man);
       }
     } else if ( sopt == "devp" || sopt == "devn" ) {
+      if ( ! doRoi() ) {
+        cout << myname << "Plot " << sopt << " requires ROIs." << endl;
+        return nullptr;
+      }
       const DataMap& res = processChannelEvent(icha, ievt);
       string hname = sopt == "devp" ? "hsigDevPos" :
                      sopt == "devn" ? "hsigDevNeg" :

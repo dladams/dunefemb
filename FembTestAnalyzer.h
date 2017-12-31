@@ -25,11 +25,16 @@ public:
   //    OptAreaCalib - Signal is calibrated by area
   enum CalibOption { OptNoCalib, OptHeightCalib, OptAreaCalib };
 
+  // ROI finding options.
+  //       OptNoRoi - no ROI finding
+  //     OptRoiPeak - Use the peak ROI finder
+  //  OptRoiTickMod - Use the tickmod ROI finder
+  enum RoiOption { OptNoRoi, OptRoiPeak, OptRoiTickMod };
+
   // Ctor from a FEMB sample set.
-  // opt = 100*doDraw + option is the processing option:
-  // option:
-  //   0 - no calibration
-  //   1 - calibration with fembCalibrator
+  // opt = 100*doDraw + 10*ropt + popt where
+  //   popt is the processing option (see enum above) and:
+  //   ropt is the ROI option (see enum above)
   FembTestAnalyzer(int opt, int a_femb, std::string a_tspat ="", bool a_isCold =true);
 
   // Ctor from file dir and pattern.
@@ -55,12 +60,17 @@ public:
   DuneFembReader* reader() const { return m_reader.get(); }
 
   // Return the parameters specifying the current sample.
-  CalibOption option() const { return m_opt; }
-  std::string optionName() const;
-  bool isNoCalib() const { return option() == OptNoCalib; }
-  bool isHeightCalib() const { return option() == OptHeightCalib; }
-  bool isAreaCalib() const { return option() == OptAreaCalib; }
-  bool isCalib() { return isHeightCalib() || isAreaCalib(); }
+  CalibOption calibOption() const { return m_copt; }
+  std::string calibOptionName() const;
+  bool isNoCalib() const { return calibOption() == OptNoCalib; }
+  bool isHeightCalib() const { return calibOption() == OptHeightCalib; }
+  bool isAreaCalib() const { return calibOption() == OptAreaCalib; }
+  bool isCalib() const { return isHeightCalib() || isAreaCalib(); }
+  RoiOption roiOption() const { return m_ropt; }
+  std::string roiOptionName() const;
+  bool doRoi() const { return roiOption() != OptNoRoi; }
+  bool doPeakRoi() const { return roiOption() == OptRoiPeak; }
+  bool doTickModRoi() const { return roiOption() == OptRoiTickMod; }
   string calibName(bool capitalize =false) const;
   bool doDraw() const { return m_doDraw; }
   int femb() const { return m_femb; }
@@ -141,7 +151,8 @@ public:
 
 private:
 
-  CalibOption m_opt;
+  CalibOption m_copt;
+  RoiOption m_ropt;
   bool m_doDraw;
   int m_femb;
   std::string m_tspat;
