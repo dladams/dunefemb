@@ -77,7 +77,11 @@ FembTestTickModTree::~FembTestTickModTree() {
     TDirectory* pdirSave = gDirectory;
     if ( pdirSave == file() ) pdirSave = nullptr;
     // Root may close the file before this object is destroyed.
-    if ( file()->IsOpen() ) {
+    if ( file() != nullptr && file()->IsOpen() ) {
+      if ( m_needWrite ) {
+        file()->cd();
+        if ( tree() != nullptr ) tree()->Write();
+      }
       file()->Close();
       delete m_pfile;
     } else if ( m_needWrite ) {
@@ -170,7 +174,7 @@ void FembTestTickModTree::fill(AdcChannelData& acd) {
       qsum += qcal;
       qqsum += qcal*qcal;
       data.qcal.push_back(qcal);
-      if ( flag == AdcUnderflow || flag==AdcOverflow ) ++m_data.nsat;
+      if ( flag == AdcUnderflow || flag==AdcOverflow ) ++data.nsat;
       adcs.push_back(adc);
     }
     double qmea = qsum/qcnt;
@@ -235,6 +239,13 @@ FembTestTickModTree::read(unsigned int ient, bool copy) {
   } else {
     cout << myname << "ERROR: Tree not found." << endl;
   }
+  return m_pdata;
+}
+
+//**********************************************************************
+
+const FembTestTickModData*
+FembTestTickModTree::read() const {
   return m_pdata;
 }
 

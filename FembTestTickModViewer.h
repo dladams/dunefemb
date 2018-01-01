@@ -31,10 +31,13 @@ public:
   const FembTestTickModTree& tmt() const { return m_tmt; }
   Index size() const { return tmt().size(); }
   const FembTestTickModData* read(Index ient) { return tmt().read(ient); }
+  const FembTestTickModData* read() { return tmt().read(); }
   bool doDraw() const { return m_doDraw; }
   Name label() const { return m_label; }
   const IndexVector& selection(Name selname);
   Name selectionLabel(Name selname);
+  double qmin() const { return -130.0; }
+  double qmax() const { return  220.0; }
 
   // Setters.
   bool doDraw(bool val) { return m_doDraw = val; }

@@ -39,8 +39,10 @@ public:
   FembTestTickModData& data() { return (m_pdata == nullptr ? m_data : *m_pdata); }
 
   // Data access for reading.
+  // First method sets entry and returns it. Second returns the current entry.
   // If copy is true, the data is copied to the write cache.
   const FembTestTickModData* read(unsigned int ient, bool copy =false);
+  const FembTestTickModData* read() const;
 
   // Write the current values to the tree.
   void fill(bool doClear =true);
