@@ -45,6 +45,7 @@
   gROOT->ProcessLine(".L $DUNETPC_INC/dune/DuneServiceAccess/DuneServiceAccess.h+");
   // Build local classes.
   cout << "Loading local classes." << endl;
+  gROOT->ProcessLine(".L moddiff.h+");
   gROOT->ProcessLine(".L StickyCodeMetrics.cxx+");
   gROOT->ProcessLine(".L DuneFembReader.cxx+");
   gROOT->ProcessLine(".L dunesupport/FileDirectory.cxx+");
