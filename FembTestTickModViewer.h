@@ -38,14 +38,19 @@ public:
   Name selectionLabel(Name selname);
   double qmin() const { return -130.0; }
   double qmax() const { return  220.0; }
+  const ManMap& pads() const { return m_mans; }
 
   // Setters.
   bool doDraw(bool val) { return m_doDraw = val; }
   void setLabel(Name a_label) { m_label = a_label; }
   
-  // Draw plot sopt for selection selname.
+  // Get plot sopt for selection selname.
   // Use sopt="" for help.
+  // Draw also puts plot on a canvas.
+  // hsit returns the histogram associated with a pad.
+  TPadManipulator* pad(std::string sopt ="", Name selname ="all");
   TPadManipulator* draw(std::string sopt ="", Name selname ="all");
+  TH1* hist(std::string sopt ="", Name selname ="all");
 
 private:
 
@@ -57,7 +62,6 @@ private:
   SelMap m_sels;     // Selection vectors indexed by name
   NameMap m_sellabs;  // Selection labels indexed by name
 
-  TPadManipulator* draw(TPadManipulator* pman) const;
 };
 
 #endif

@@ -38,32 +38,6 @@ FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
       m_ptree = new TTree(tname.c_str(), "FEMB test pulses");
       m_ptree->Branch("data", &m_data);
     }
-/*
-    m_ptree->Branch("femb", &(m_data.femb), "femb/i");
-    m_ptree->Branch("gain", &(m_data.gain), "gain/i");
-    m_ptree->Branch("shap", &(m_data.shap), "shap/i");
-    m_ptree->Branch("extp", &(m_data.extp), "extp/O");
-    m_ptree->Branch("ntmd", &(m_data.ntmd));
-    m_ptree->Branch("chan", &(m_data.chan), "chan/i");
-    m_ptree->Branch("ped0", &(m_data.ped0));
-    m_ptree->Branch("qexp", &(m_data.qexp));
-    m_ptree->Branch("ievt", &(m_data.ievt));
-    m_ptree->Branch("itmx", &(m_data.itmx));
-    m_ptree->Branch("itmn", &(m_data.itmn));
-    m_ptree->Branch("pede", &(m_data.pede));
-    m_ptree->Branch("itmd", &(m_data.itmd));
-    m_ptree->Branch("cmea", &(m_data.cmea), "cmea/F");
-    m_ptree->Branch("crms", &(m_data.crms), "crms/F");
-    m_ptree->Branch("sadc", &(m_data.sadc));
-    m_ptree->Branch("adcm", &(m_data.adcm));
-    m_ptree->Branch("adcn", &(m_data.adcn));
-    m_ptree->Branch("efft", &(m_data.efft));
-    m_ptree->Branch("stk1", &(m_data.stk1), "stk1/F");
-    m_ptree->Branch("stk2", &(m_data.stk2), "stk2/F");
-    m_ptree->Branch("nsat", &(m_data.nsat));
-    m_ptree->Branch("radc", &(m_data.radc));
-    m_ptree->Branch("qcal", &(m_data.qcal));
-*/
   }
   clear();
   if ( pdirSave != nullptr ) pdirSave->cd();
@@ -78,10 +52,7 @@ FembTestTickModTree::~FembTestTickModTree() {
     if ( pdirSave == file() ) pdirSave = nullptr;
     // Root may close the file before this object is destroyed.
     if ( file() != nullptr && file()->IsOpen() ) {
-      if ( m_needWrite ) {
-        file()->cd();
-        if ( tree() != nullptr ) tree()->Write();
-      }
+      if ( m_needWrite ) write();
       file()->Close();
       delete m_pfile;
     } else if ( m_needWrite ) {
@@ -115,8 +86,10 @@ void FembTestTickModTree::clear() {
   m_data.adcm = -1.0;
   m_data.adcn = -1.0;
   m_data.efft = -1.0;
-  m_data.stk1 = -2.0;
-  m_data.stk2 = -1.0;
+  m_data.sfmx = -2.0;
+  m_data.sf00 = -1.0;
+  m_data.sf01 = -1.0;
+  m_data.sf63 = -1.0;
   m_data.nsat = -1;
   m_data.qcal.clear();
   m_data.radc.clear();
@@ -187,8 +160,10 @@ void FembTestTickModTree::fill(AdcChannelData& acd) {
     data.sadc = sm.maxAdc();
     data.adcm = sm.meanAdc();
     data.adcn = sm.meanAdc2();
-    data.stk1 = sm.maxFraction();
-    data.stk2 = sm.classicFraction();
+    data.sfmx = sm.maxFraction();
+    data.sf00 = sm.zeroFraction();
+    data.sf01 = sm.oneFraction();
+    data.sf63 = sm.highFraction();
     if ( qmea < qmin ) {
       itqmin = itmd;
       qmin = qmea;
@@ -219,6 +194,7 @@ void FembTestTickModTree::fill(AdcChannelData& acd) {
 void FembTestTickModTree::write() {
   TDirectory* pdirSave = gDirectory;
   file()->Write();
+  file()->Purge();
   if ( pdirSave != nullptr ) pdirSave->cd();
   m_needWrite = false;
 }
@@ -228,7 +204,7 @@ void FembTestTickModTree::write() {
 const FembTestTickModData*
 FembTestTickModTree::read(unsigned int ient, bool copy) {
   const string myname = "FembTestTickModTree::data: ";
-  m_pdata = nullptr;
+  //m_pdata = nullptr;
   if ( haveTree() ) {
     if ( ient < size() ) {
       tree()->GetEntry(ient);

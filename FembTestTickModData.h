@@ -44,8 +44,10 @@ public:
   float adcm;               // ADC mean
   float adcn;               // ADC mean without most common code
   float efft;               // Fraction of samples within 2.5 ke of mean.
-  float stk1;               // sticky 1
-  float stk2;               // sticky 2
+  float sfmx;               // sticky max fraction
+  float sf00;               // sticky mod0 fraction1
+  float sf01;               // sticky mod1 fraction1
+  float sf63;               // sticky mod63 fraction
   int   nsat;               // # saturated pulses
   std::vector<short> radc;  // Raw ADC for each tickset.
   std::vector<float> qcal;  // Measured charge for each tickset sample.

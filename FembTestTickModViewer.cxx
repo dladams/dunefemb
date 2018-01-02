@@ -74,18 +74,43 @@ const IndexVector& FembTestTickModViewer::selection(Name selname) {
   string remLabel;
   float sigThresh = 5.0;
   if ( remname.substr(0,4) == "chan" ) {
-    string scha = remname.substr(4);
-    while ( scha.size() > 1 && scha[0] == '0' ) scha=scha.substr(1);
-    istringstream sscha(scha);
-    Index icha;
-    sscha >> icha;
-    IndexVector& sel = m_sels[selname];
-    for ( Index ient : selbase ) {
-      if ( read(ient)->chan == icha ) sel.push_back(ient);
+    // If any channel selection is requested, construct all channel selections.
+    // First make the prefix for all selection names.
+    string selprefix;
+    if ( basename != "all" ) selprefix = basename + "_";
+    selprefix += "chan";
+    // If channel selections for this base are already present and this is not in
+    // that set, it has invalid format.
+    if ( m_sels.find(selprefix + "000") != m_sels.end() ) {
+      cout << myname << "ERROR: Invalid format for channel selection: " << remname << endl;
+      return m_sels["empty"];
     }
-    ostringstream sslab;
-    sslab << "channel " << icha;
-    remLabel = sslab.str();
+    // First make selection names for all channels and
+    // a selection list and label for each name.
+    vector<vector<string>> chselnames(128);
+    for ( Index icha=0; icha<128; ++icha ) {
+      ostringstream sscha;
+      sscha << icha;
+      string scha = sscha.str();
+      chselnames[icha].push_back(selprefix + scha);
+      if ( icha < 100 ) chselnames[icha].push_back(selprefix + "0" + scha);
+      if ( icha <  10 ) chselnames[icha].push_back(selprefix + "00" + scha);
+      for ( string chselname : chselnames[icha] ) {
+        string slab = baseLabel;
+        if (  slab.size() ) slab += " ";
+        slab += remLabel;
+        m_sellabs[chselname] = slab;
+      }
+    }
+    // Loop over events and add them to the appropriate selection vectors.
+    for ( Index ient : selbase ) {
+      Index icha = read(ient)->chan;
+      for ( string chselname : chselnames[icha] ) {
+        m_sels[chselname].push_back(ient);
+      }
+    }
+    // Return the requested selection.
+    return selection(selname);
   } else if ( remname.substr(0,3) == "adc" ) {
     string sadc = remname.substr(3);
     while ( sadc.size() > 1 && sadc[0] == '0' ) sadc=sadc.substr(1);
@@ -147,10 +172,17 @@ Name FembTestTickModViewer::selectionLabel(Name selname) {
 
 //**********************************************************************
 
-TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
-  const string myname = "FembTestTickModViewer::draw: ";
+TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
+  const string myname = "FembTestTickModViewer::pad: ";
   if ( sopt == "" ) {
-    cout << myname << "   draw(\"q\") - Charge distribution" << endl;
+    cout << myname << "     draw(\"q\") - Charge illumination" << endl;
+    cout << myname << "    draw(\"qw\") - Charge illumination (wide)" << endl;
+    cout << myname << "   draw(\"adc\") - ADC illumination" << endl;
+    cout << myname << "  draw(\"adcw\") - ADC illumination (wide)" << endl;
+    cout << myname << "  draw(\"qres\") - Charge residual" << endl;
+    cout << myname << "  draw(\"qrms\") - Charge RMS" << endl;
+    cout << myname << "  draw(\"sfmx\") - Bin peak stuck code fraction" << endl;
+    cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
     return nullptr;
   }
   if ( size() == 0 ) {
@@ -206,7 +238,7 @@ TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
     man.setLogRangeY(0.5, 1.e6);
     man.setLogY();
     man.setGridY(true);
-    return draw(&man);
+    return &man;
   } else if ( sopt == "adc" || sopt == "adcw" ) {
     int xmin = 0;
     int xmax = 4096;
@@ -232,7 +264,7 @@ TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
     man.setLogY();
     man.addVerticalModLines(64);
     man.setGridY(true);
-    return draw(&man);
+    return &man;
   } else if ( sopt == "qres" ) {
     double xmin = -3.0;
     double xmax =  3.0;
@@ -251,7 +283,7 @@ TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
     man.add(ph);
     man.showUnderflow();
     man.showOverflow();
-    return draw(&man);
+    return &man;
   } else if ( sopt == "qrms" ) {
     double xmin =  0.0;
     double xmax =  5.0;
@@ -267,25 +299,109 @@ TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
     man.add(ph);
     man.showUnderflow();
     man.showOverflow();
-    return draw(&man);
-  } else if ( sopt == "stk1" || sopt == "stk2" ) {
+    return &man;
+  } else if ( sopt == "sfmx" || sopt == "sf63" ) {
     double xmin =  0.0;
     double xmax =  1.0;
     int nbin = 40;
-    string svar = sopt == "stk1" ? "S_{1}" : "S_{2}";
-    string ttl = "Local charge RMS " + ttlsuf + "; " + svar + "; # ticksets";
+    string ttl;
+    if ( sopt == "sfmx" ) ttl = "Peak";
+    else ttl = "Mod63";
+    ttl += " ADC bin fraction " + ttlsuf + "; Fraction; # ticksets";
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
     for ( Index ient : sel ) {
-      float s = ( sopt == "stk1" ) ? read(ient)->stk1 : read(ient)->stk2;
-      if ( s == 1.0 ) s = 0.9999;
-      ph->Fill(s);
+      float frac = -1.0;
+      if ( sopt == "sfmx" ) frac = read(ient)->sfmx;
+      if ( sopt == "sf63" ) frac = read(ient)->sf63;
+      if ( frac == 1.0 ) frac = 0.9999;
+      ph->Fill(frac);
     }
     man.add(ph);
     man.showUnderflow();
     man.showOverflow();
-    return draw(&man);
+    return &man;
+  } else if ( sopt == "mod64") {
+    double xmin =  0.0;
+    double xmax = 64.0;
+    int nbin = 64;
+    string ttl = "ADC LSB " + ttlsuf + "; ADC%64; # ticks";
+    TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
+    ph->SetStats(0);
+    ph->SetLineWidth(2);
+    for ( Index ient : sel ) {
+      for ( Index adc : read(ient)->radc ) {
+        ph->Fill(adc%64);
+      }
+    }
+    man.add(ph);
+    man.showUnderflow();
+    man.showOverflow();
+    return &man;
+  // fmod00, fmod01, fmod64 for dists
+  // Plus suffix "ch" for vs. channel.
+  } else if ( sopt.substr(0,4) == "fmod" ) {
+    static vector<string> sufs = {"00", "01", "63"};
+    static vector<string> labmods = {"mod00", "mod01", "mod63"};
+    static vector<Index> imods = {0, 1, 63};
+    bool isDist = sopt.size() == 6;
+    bool isChan = sopt.size() == 8 && sopt.substr(6,2) == "ch";
+    string suf;
+    Index ityp = sufs.size();
+    if ( isDist || isChan ) {
+      string insuf = sopt.substr(4,2);
+      for ( ityp=0; ityp<sufs.size(); ++ityp ) if ( sufs[ityp] == insuf ) break;
+    }
+    if ( ityp == sufs.size() ) {
+      cout << myname << "ERROR: Invalid fmod plot specifier: " << sopt << endl;
+      return nullptr;
+    }
+    string labmod = labmods[ityp];
+    Index imod = imods[ityp];
+    Index ncha = 128;
+    double xmin =   0;
+    double xmax = ncha;
+    int nbin = ncha;
+    TH1* ph = nullptr;
+    string sopt = "";
+    if ( isDist ) {
+      string ttl = "ADC " + labmod + " fraction " + ttlsuf + "; Fraction; # channels [/0.01]";
+      ph = new TH1F(mnam.c_str(), ttl.c_str(), 50, 0.0, 0.5);
+      man.showUnderflow();
+      man.showOverflow();
+    } else {
+      string ttl = "ADC " + labmod + " fraction " + ttlsuf + "; Channel; Fraction";
+      ph = new TH1F(mnam.c_str(), ttl.c_str(), ncha, 0, ncha);
+      man.addVerticalModLines(16);
+      man.setRangeY(0,1);
+      sopt = "hist";
+    }
+    ph->SetStats(0);
+    ph->SetLineWidth(2);
+    for ( Index icha=0; icha<ncha; ++icha ) {
+      ostringstream ssout;
+      ssout << "chan";
+      if ( icha < 10 ) ssout << "0";
+      if ( icha < 100 ) ssout << "0";
+      ssout << icha;
+      if ( selname.size() ) ssout << "_" << selname;
+      string chselname = ssout.str();
+      TH1* phm = hist("mod64", chselname);
+      if ( phm == nullptr ) {
+        cout << myname << "ERROR: Unable to fetch mod64 hist for fmod64. Selection is "
+             << selname << endl;
+        if ( isDist ) ph->Fill(-1.0);
+      } else {
+        double nmod = phm->GetBinContent(1+imod);
+        double ntot = phm->Integral();
+        double frac = ntot > 0 ? nmod/ntot : 0.0;
+        if ( isDist ) ph->Fill(frac);
+        else          ph->Fill(icha, frac);
+      }
+    }
+    man.add(ph, sopt);
+    return &man;
   }
   cout << myname << "Invalid plot name: " << sopt << endl;
   m_mans.erase(mnam);
@@ -294,9 +410,18 @@ TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
 
 //**********************************************************************
 
-TPadManipulator* FembTestTickModViewer::draw(TPadManipulator* pman) const {
-  if ( doDraw() ) pman->draw();
+TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
+  TPadManipulator* pman = pad(sopt, selname);
+  if ( pman != nullptr && doDraw() ) pman->draw();
   return pman;
+}
+
+//**********************************************************************
+
+TH1* FembTestTickModViewer::hist(string sopt, Name selname) {
+  TPadManipulator* pman = pad(sopt, selname);
+  if ( pman != nullptr ) return pman->hist();
+  return nullptr;
 }
 
 //**********************************************************************

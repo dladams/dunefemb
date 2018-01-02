@@ -587,7 +587,7 @@ processChannelEvent(Index icha, Index ievt) {
           if ( count > maxCount ) maxCount = count;
           sumCount += count;
           const AdcIndex adcCodeMod = adcCode%64;
-          if ( adcCodeMod == 0 || adcCodeMod == 63 ) stickyCount += count;
+          if ( adcCodeMod == 63 ) stickyCount += count;
         }
         float s1 = sumCount > 0 ? float(maxCount)/float(sumCount) : -1.0;
         float s2 = sumCount > 0 ? float(stickyCount)/float(sumCount) : -1.0;
