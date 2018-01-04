@@ -9,7 +9,7 @@
   cout << "Welcome to dunefemb." << endl;
   string dtver;
   try {
-    const char* cdtver = gSystem->Getenv("XDUNETPC_VERSION");
+    const char* cdtver = gSystem->Getenv("DUNETPC_VERSION");
     if ( cdtver != nullptr ) dtver = cdtver;
   } catch(...) {
     cout << "Must first set up dunetpc." << endl;

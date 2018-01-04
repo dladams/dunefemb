@@ -1,6 +1,6 @@
 //void test() {
 {
-  int ifmb = 20;
+  int ifmb = 11;
   cout << "FEMB " << ifmb << endl;
   int opt = 121;    // tickmod ROIs
   opt = 111;        // peak ROIs
