@@ -26,6 +26,13 @@ tools.adcThresholdSignalFinder.BinsAfter:  10
 tools.keThresholdSignalFinder: @local::tools.adcThresholdSignalFinder
 tools.keThresholdSignalFinder.Threshold: 15
 
+tools.tickModSignalFinder: {
+  tool_type: AdcRegularSignalFinder
+  LogLevel: 1
+  Period: 0
+  Length: 0
+}
+
 tools.fembCalibratorG2S2: {
   tool_type: FembMappedAdcModifier
   LogLevel: 1
@@ -47,3 +54,4 @@ tools.fembCalibratorG2S2Warm: {
   DirName:  "calibFromFemb_g2s2_warm"
 }
 
+#tools.adcRoiViewer.LogLevel: 3
