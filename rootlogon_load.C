@@ -7,9 +7,25 @@
 
 {
   cout << "Welcome to dunefemb." << endl;
-  cout << endl;
-  string dtver = gSystem->Getenv("DUNETPC_VERSION");
-  string buildDir = ".aclic_" + dtver;
+  string dtver;
+  try {
+    const char* cdtver = gSystem->Getenv("XDUNETPC_VERSION");
+    if ( cdtver != nullptr ) dtver = cdtver;
+  } catch(...) {
+    cout << "Must first set up dunetpc." << endl;
+    exit(1);
+  }
+/*  cout << endl;
+*/
+  if ( dtver.size() == 0 ) {
+    cout << "Must first set up dunetpc." << endl;
+    exit(1);
+  }
+  string buildDir = gSystem->Getenv("ACLICDIR");
+  if ( buildDir.size() == 0 ) {
+    buildDir = ".aclic_" + dtver;
+  }
+  cout << "ACLiC dir: " << buildDir << endl;
   gSystem->SetBuildDir(buildDir.c_str());
   string dtinc = gSystem->Getenv("DUNETPC_INC");
   cout << "Dunetpc include dir: " << dtinc << endl;
