@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include "TH1F.h"
+#include "TLegend.h"
 
 using std::string;
 using std::cout;
@@ -183,6 +184,7 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     cout << myname << "  draw(\"qrms\") - Charge RMS" << endl;
     cout << myname << "  draw(\"sfmx\") - Bin peak stuck code fraction" << endl;
     cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
+    cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
     return nullptr;
   }
   if ( size() == 0 ) {
@@ -338,6 +340,26 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     man.add(ph);
     man.showUnderflow();
     man.showOverflow();
+    return &man;
+  } else if ( sopt == "fmodsch" ) {
+    TH1* ph63 = hist("fmod63ch", selname);
+    TH1* ph00 = hist("fmod00ch", selname);
+    TH1* ph01 = hist("fmod01ch", selname);
+    string dopt = "hist";
+    man.add(ph63, dopt);
+    TH1* ph63new = man.hist();
+    dopt += " same";
+    man.add(ph00, dopt);
+    TH1* ph00new = dynamic_cast<TH1*>(man.objects().back().get());
+    man.add(ph01, dopt);
+    TH1* ph01new = dynamic_cast<TH1*>(man.objects().back().get());
+    ph00new->SetLineStyle(2);
+    ph01new->SetLineStyle(3);
+    TLegend* pleg = man.addLegend(0.60, 0.73, 0.93, 0.88);
+    pleg->AddEntry(ph63new, "ADC%64 == 63", "l");
+    pleg->AddEntry(ph00new, "ADC%64 == 0", "l");
+    pleg->AddEntry(ph01new, "ADC%64 == 1", "l");
+    man.setRangeY(0,1);
     return &man;
   // fmod00, fmod01, fmod64 for dists
   // Plus suffix "ch" for vs. channel.
