@@ -21,7 +21,9 @@
     cout << "Must first set up dunetpc." << endl;
     exit(1);
   }
-  string buildDir = gSystem->Getenv("ACLICDIR");
+  string buildDir;
+  const char* pch = gSystem->Getenv("ACLICDIR");
+  if ( pch != nullptr ) buildDir = pch;
   if ( buildDir.size() == 0 ) {
     buildDir = ".aclic_" + dtver;
   }

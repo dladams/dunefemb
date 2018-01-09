@@ -96,10 +96,10 @@ const IndexVector& FembTestTickModViewer::selection(Name selname) {
       chselnames[icha].push_back(selprefix + scha);
       if ( icha < 100 ) chselnames[icha].push_back(selprefix + "0" + scha);
       if ( icha <  10 ) chselnames[icha].push_back(selprefix + "00" + scha);
+      string slab = baseLabel;
+      if ( slab.size() ) slab += " ";
+      slab += "channel " + scha;
       for ( string chselname : chselnames[icha] ) {
-        string slab = baseLabel;
-        if (  slab.size() ) slab += " ";
-        slab += remLabel;
         m_sellabs[chselname] = slab;
       }
     }

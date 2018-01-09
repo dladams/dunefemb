@@ -33,8 +33,9 @@ public:
 
   // Ctor from a FEMB sample set.
   // opt = 100*doDraw + 10*ropt + popt where
-  //   popt is the processing option (see enum above) and:
+  //   doDraw indicates to draw canvas with each succesful call to draw(...)
   //   ropt is the ROI option (see enum above)
+  //   popt is the processing option (see enum above) and:
   FembTestAnalyzer(int opt, int a_femb, std::string a_tspat ="", bool a_isCold =true);
 
   // Ctor from file dir and pattern.
@@ -82,9 +83,10 @@ public:
   bool extClock() const { return reader() == nullptr ? false : reader()->extClock(); }
 
   // Other getters.
+  // If useAll is true, processAll is called before building tree.
   bool haveTools() const;     // This will be false if tools are not found in initialization.
-  FembTestPulseTree* pulseTree();
-  FembTestTickModTree* tickModTree();
+  FembTestPulseTree* pulseTree(bool useAll =true);
+  FembTestTickModTree* tickModTree(bool useAll =true);
   Index tickPeriod() const { return m_tickPeriod; }
 
   // Setters.

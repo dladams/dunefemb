@@ -347,9 +347,9 @@ processChannelEvent(Index icha, Index ievt) {
   }
   if ( dbg >= 2 ) cout << myname << "Units for samples are " << sigunit << endl;
   // Fill the tickmod tree.
-  // This includes finding the tickmods with eht amx and min signals.
+  // This includes finding the tickmods with the min and max signals.
   if ( tickPeriod() > 0 ) {
-    FembTestTickModTree& ftt = *tickModTree();
+    FembTestTickModTree& ftt = *tickModTree(false);
     ftt.clear();
     ftt.data().femb = femb();
     ftt.data().gain = gainIndex();
@@ -722,6 +722,9 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
           float sigmean = resevt.getFloat(meaName);
           float sigrms  = resevt.getFloat(rmsName);
           bool isUnderOver = nudr>0 || novr>0;
+          if ( doTickModRoi() ) {
+            isUnderOver = usePos ? novr > 0 : nudr > 0;
+          }
           if ( isUnderOver ) {
             if ( usePos ) ++nptPosBad;
             else          ++nptNegBad;
@@ -777,9 +780,9 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   res.setInt("channel", icha);
   res.setFloatVector("peds", peds);
   res.setFloatVector("nkes", nkeles);
-  // Ther rest can be skipped if we do ROIs.
+  // The rest can be skipped if we do ROIs.
   if ( ! doRoi() )  return res;
-  // Sort the reponse arrays.
+  // Sort the reponse arrays and discard flagged points.
   map<float, int> iptOrderMap;
   for ( Index ipt=0; ipt<x.size(); ++ipt ) iptOrderMap[x[ipt]] = ipt;
   vector<Index> iptOrdered;
@@ -1053,7 +1056,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     //   adcminWithPed - fitted saturation level minus the pedestal for first point after
     //   lowSaturatedRawAdcs - raw ADC means for the saturated points
     //   lowSaturatedRawAdcMax - maximum raw ADC mean for the saturated points
-    if ( isNoCalib() && fitAdcMin ) {
+    if ( isNoCalib() && fitAdcMin && !useArea ) {
       // Find the pedestal above and closest to adcmin.
       float dadcNearest = 1.e10;
       Index iptNearest = 0;
@@ -1242,7 +1245,8 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
         res += getChannelResponse(icha, ssgn, useArea);
       }
     }
-    if ( isCalib() && doPeakRoi() ) res += getChannelDeviations(icha);
+    //if ( isCalib() && doPeakRoi() ) res += getChannelDeviations(icha);
+    if ( isCalib() ) res += getChannelDeviations(icha);
   }
   if ( true ) {
     // Create pedestal graph.
@@ -1323,7 +1327,10 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
       posValues.push_back("Pos");
     }
     // Loop over types (height and area)
-    for ( bool useArea : {false, true} ) {
+    vector<bool> useAreas;
+    useAreas.push_back(false);
+    if ( doPeakRoi() ) useAreas.push_back(true);
+    for ( bool useArea : useAreas ) {
       string sarea = useArea ? "Area" : "Height";
       // Loop over signs (pos, neg or both)
       for ( string spos : posValues ) {
@@ -1481,33 +1488,38 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
       TH1* phadv = nullptr;
       for ( Index icha=0; icha<ncha; ++icha ) {
         const DataMap& resevt = processChannel(icha);
-        for ( string hnam : {"hdev", "hadv"} ) {
-          if ( ! resevt.haveHist(hnam) ) {
-            cout << myname << "Result for channel " << icha << " does not have histogram "
-                 << hnam << endl;
-            continue;
-          }
-        }
         TH1* phdevCha = resevt.getHist("hdev");
+        if ( phdevCha == nullptr ) {
+          cout << myname << "Result for channel " << icha << " does not have histogram hdev" << endl;
+          continue;
+        }
         TH1* phadvCha = resevt.getHist("hadv");
+        bool doAbs = phadvCha != nullptr;
         if ( phdev == nullptr ) {
           phdev = dynamic_cast<TH1*>(phdevCha->Clone("hdev"));
-          phadv = dynamic_cast<TH1*>(phadvCha->Clone("hadv"));
-          for ( TH1* ph : {phdev, phadv} ) {
+          vector<TH1*> devhists;
+          devhists.push_back(phdev);
+          if ( doAbs ) {
+            phadv = dynamic_cast<TH1*>(phadvCha->Clone("hadv"));
+            devhists.push_back(phadv);
+          }
+          for ( TH1* ph : devhists ) {
             ph->SetDirectory(nullptr);
             ph->SetLineWidth(2);
             ph->Reset();
           }
         }
         string sttlDev = calibName(true) + " deviation for FEMB " + sfemb;
-        string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
         phdev->SetTitle(sttlDev.c_str());
-        phadv->SetTitle(sttlAdv.c_str());
         phdev->Add(phdevCha);
-        phadv->Add(phadvCha);
+        if ( doAbs ) {
+          string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
+          phadv->SetTitle(sttlAdv.c_str());
+          phadv->Add(phadvCha);
+        }
       }
       allResult.setHist(phdev, true);
-      allResult.setHist(phadv, true);
+      if ( phadv != nullptr ) allResult.setHist(phadv, true);
     }
   }  // end if doRoi()
   // Record histograms.
@@ -1533,7 +1545,7 @@ bool FembTestAnalyzer::haveTools() const {
 
 //**********************************************************************
 
-FembTestPulseTree* FembTestAnalyzer::pulseTree() {
+FembTestPulseTree* FembTestAnalyzer::pulseTree(bool useAll) {
   const string myname = "FembTestAnalyzer::pulseTree: ";
   if ( m_ptreePulse != nullptr ) return m_ptreePulse.get();
   if ( ! isCalib() ) {
@@ -1544,6 +1556,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
     cout << myname << "ADC processing tools are missing." << endl;
     return nullptr;
   }
+  if ( useAll ) processAll();
   ostringstream ssnam;
   ssnam << "femb_test_pulse_femb" << femb() << "_g" << gainIndex()
           << "_s" << shapingIndex()
@@ -1593,7 +1606,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree() {
 
 //**********************************************************************
 
-FembTestTickModTree* FembTestAnalyzer::tickModTree() {
+FembTestTickModTree* FembTestAnalyzer::tickModTree(bool useAll) {
   const string myname = "FembTestAnalyzer::tickModTree: ";
   if ( m_ptreeTickMod != nullptr ) return m_ptreeTickMod.get();
   if ( ! isCalib() ) {
@@ -1604,6 +1617,7 @@ FembTestTickModTree* FembTestAnalyzer::tickModTree() {
     cout << myname << "ADC processing tools are missing." << endl;
     return nullptr;
   }
+  if ( useAll ) processAll();
   ostringstream ssnam;
   ssnam << "femb_test_tickmod_femb" << femb() << "_g" << gainIndex()
           << "_s" << shapingIndex()
@@ -1709,7 +1723,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
     if ( doRoi() ) {
       cout << myname << "            draw(\"pedlim\") - Pedestal vs. channel with ADC ranges" << endl;
       cout << myname << "              draw(\"rmsh\") - Height deviations." << endl;
-      cout << myname << "              draw(\"rmsa\") - Height deviations." << endl;
+      cout << myname << "              draw(\"rmsa\") - Area deviations." << endl;
       cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
       cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
       cout << myname << "               draw(\"dev\") - ADC calibration deviations" << endl;
