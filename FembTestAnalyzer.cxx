@@ -223,6 +223,31 @@ double FembTestAnalyzer::chargeFc(Index ievt) {
 
 //**********************************************************************
 
+bool FembTestAnalyzer::doResponseFit() const {
+  return doRoi();
+}
+
+//**********************************************************************
+
+string FembTestAnalyzer::responseFitFunctionName(SignOption isgn) const {
+  if ( isgn == OptNoSign ) return "fnone";
+  string sfit = "fgain";
+  if ( isNoCalib() ) {
+    if      ( isgn == OptPositive )  sfit = "fgain";
+    else if ( isgn == OptNegative ) sfit = "fgainMax";
+    else if ( isgn == OptBothSigns ) {
+      if ( reader()->extPulse() ) {
+        sfit = "fgainMin";
+      } else if ( reader()->intPulse() ) {
+        sfit = "fgainOffMin";
+      }
+    }
+  }
+  return sfit;
+}
+
+//**********************************************************************
+
 const DataMap& FembTestAnalyzer::
 processChannelEvent(Index icha, Index ievt) {
   const string myname = "FembTestAnalyzer::processChannelEvent: ";
@@ -248,8 +273,7 @@ processChannelEvent(Index icha, Index ievt) {
   res.setInt("channel", icha);
   ++m_nChannelEventProcessed;
   res.setInt("event", ievt);
-  const DuneFembReader* prdr = reader();
-  if ( prdr == nullptr ) return res.setStatus(1);
+  if ( reader() == nullptr ) return res.setStatus(1);
   // Fetch the expected charge for this sample.
   double pulseQfC = chargeFc(ievt);
   double pulseQe = pulseQfC*elecPerFc();
@@ -359,7 +383,8 @@ processChannelEvent(Index icha, Index ievt) {
     ftt.data().ped0 = ievt==0 ? acd.pedestal : processChannelEvent(icha, 0).getFloat("pedestal");
     ftt.data().qexp = 0.001*pulseQe;
     ftt.data().ievt = ievt;
-    ftt.fill(acd);
+    DataMap rest = ftt.fill(acd);
+    res.extend(rest);
   }
   // Process the ROIs.
   bool haverois = resmod.haveInt("roiCount");
@@ -635,7 +660,7 @@ processChannelEvent(Index icha, Index ievt) {
 
 //**********************************************************************
 
-DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool useArea) {
+DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool useArea) {
   const string myname = "FembTestAnalyzer::getChannelResponse: ";
   DataMap res;
   const DuneFembReader* prdr = reader();
@@ -656,20 +681,23 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   // Note that we have to proceed without ROIs because we want to record peds and nkes
   bool pulseIsExternal = prdr->extPulse();
   if ( pulseIsExternal ) ievt0 = 1;
-  bool useBoth = usePosOpt == "Both";
+  bool useBoth = isgn = OptBothSigns;
   vector<bool> usePosValues;
-  if ( usePosOpt == "Neg" || useBoth ) usePosValues.push_back(false);
-  if ( usePosOpt == "Pos" || useBoth ) usePosValues.push_back(true);
+  if ( useBoth || isgn == OptNegative ) usePosValues.push_back(false);
+  if ( useBoth || isgn == OptPositive ) usePosValues.push_back(true);
   if ( usePosValues.size() == 0 ) {
-    cout << myname << "Invalid value for usePosOpt: " << usePosOpt << endl;
+    cout << myname << "Invalid value for isgn: " << isgn << endl;
     return DataMap(3);
   }
   string styp = useArea ? "Area" : "Height";
   ostringstream sscha;
   sscha << icha;
   string scha = sscha.str();
-  string hnam = "hchaResp" + styp + usePosOpt;
-  string usePosLab = (usePosOpt == "Both") ? "" : " " + usePosOpt;
+  string signLabel;
+  if ( isgn == OptNegative ) signLabel = "Neg";
+  if ( isgn == OptPositive ) signLabel = "Pos";
+  string hnam = "hchaResp" + styp + signLabel;
+  string usePosLab = useBoth ? "" : " " + signLabel;
   string gttl = styp + " response" + usePosLab + " channel " + scha;
   string gttlr = styp + " response residual" + usePosLab + " channel " + scha;
   string httl = gttl + " ; charge factor; Mean ADC " + styp;
@@ -690,6 +718,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   double ymax = 1000.0;
   vector<float> peds(nevt, 0.0);
   vector<float> nkeles(nevt, 0.0);
+  vector<int> adcmins(nevt, -2);
+  vector<int> adcmaxs(nevt, -1);
   Index iptPosGood = 0;  // Last good point for positive signals.
   Index iptNegGood = 0;
   Index nptPosBad = 0;
@@ -702,6 +732,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
       if ( dbg > 3 ) resevt.print();
     }
     peds[ievt] = resevt.getFloat("pedestal");
+    if ( isCalib() ) {
+      adcmins[ievt] = resevt.getInt("calibAdcMin", -1);
+      adcmaxs[ievt] = resevt.getInt("calibAdcMax", -1);
+    }
     int roiCount = resevt.getInt("roiCount");
     float nele = resevt.getFloat("nElectron");
     float nkele = 0.001*nele;
@@ -779,9 +813,35 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   }
   res.setInt("channel", icha);
   res.setFloatVector("peds", peds);
+  if ( isCalib() ) {
+    int calibAdcMin = -1;
+    for ( int adcmin : adcmins ) {
+      if ( adcmin >= 0 ) {
+        if ( calibAdcMin < 0 ) calibAdcMin = adcmin;
+        else if ( adcmin != calibAdcMin ) {
+          calibAdcMin = -2;
+          break;
+        }
+      }
+    }
+    int calibAdcMax = -1;
+    for ( int adcmax : adcmaxs ) {
+      if ( adcmax >= 0 ) {
+        if ( calibAdcMax < 0 ) calibAdcMax = adcmax;
+        else if ( adcmax != calibAdcMax ) {
+          calibAdcMax = -2;
+          break;
+        }
+      }
+    }
+    res.setIntVector("calibAdcMins", adcmins);
+    res.setIntVector("calibAdcMaxs", adcmaxs);
+    res.setInt("calibAdcMin", calibAdcMin);
+    res.setInt("calibAdcMax", calibAdcMax);
+  }
   res.setFloatVector("nkes", nkeles);
   // The rest can be skipped if we do ROIs.
-  if ( ! doRoi() )  return res;
+  if ( ! doResponseFit() )  return res;
   // Sort the reponse arrays and discard flagged points.
   map<float, int> iptOrderMap;
   for ( Index ipt=0; ipt<x.size(); ++ipt ) iptOrderMap[x[ipt]] = ipt;
@@ -819,7 +879,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     res.setFloatVector("sticky2" + ssgn + "s", sticky2[usePos]);
   }
   httl = "Response " + styp + usePosLab + "; Charge [ke]; Mean ADC " + styp;
-  string gnam = "gchaResp" + styp + usePosOpt;
+  string gnam = "gchaResp" + styp + signLabel;
   // Create graph with all points.
   double qmaxke = 0.001*elecPerFc()*chargeFc(nevt-1);
   double xmax = 50*int(qmaxke/50.0 + 1.3);
@@ -875,22 +935,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   bool fitSlow = false;
   bool fitTanh = 1;
   // Choose fit function.
-  string sfit = "fgain";
-  if ( isNoCalib() ) {
-    if      ( usePosOpt == "Pos" )  sfit = "fgain";
-    else if ( usePosOpt == "Neg" )  sfit = "fgainMax";
-    else if ( useBoth ) {
-      if ( prdr->extPulse() ) {
-        if ( false && nptPosBad ) sfit = "fgainMinMax";
-        else sfit = "fgainMin";
-        //else sfit = "fgainMinSlow";
-        //else sfit = "fgainMinSlow2";
-      } else if ( prdr->intPulse() ) {
-        if ( false && nptPosBad ) sfit = "fgainOffMinMax";
-        else sfit = "fgainOffMin";
-      }
-    }
-  }
+  string sfit = responseFitFunctionName(isgn);
   TF1* pfit0 = nullptr;
   TF1* pfit = nullptr;
   TF1* prefit = nullptr;
@@ -1034,21 +1079,21 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
     // Record the gain.
     gain = prefit->GetParameter(0);
     double gainUnc = prefit->GetParError(0);
-    string fpname = "fitGain" + styp + usePosOpt;
+    string fpname = "fitGain" + styp + signLabel;
     string fename = fpname + "Unc";
     res.setFloat(fpname, gain);
     res.setFloat(fename, gainUnc);
     // Record the ADC saturation.
     if ( fitAdcMax ) {
-      fpname = "fitSaturationMax" + styp + usePosOpt;
+      fpname = "fitSaturationMax" + styp + signLabel;
       res.setFloat(fpname, adcmax);
     }
     if ( fitAdcMin ) {
-      fpname = "fitSaturationMin" + styp + usePosOpt;
+      fpname = "fitSaturationMin" + styp + signLabel;
       res.setFloat(fpname, adcmin);
     }
     if ( fitKelOff ) {
-      fpname = "fitKelOff" + styp + usePosOpt;
+      fpname = "fitKelOff" + styp + signLabel;
       res.setFloat(fpname, keloff);
     }
     // If there is no calibration, record values that can be used to deduce the
@@ -1126,7 +1171,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, string usePosOpt, bool 
   // in the linear regions.
   // Set flag for deviation histogram. We do this if calibration is applied
   // and is of type useArea.
-  string hnamBase = "hchaResp" + styp + usePosOpt;
+  string hnamBase = "hchaResp" + styp + signLabel;
   string httlBase = styp + " response ";
   string hylab = "# entries";
   string hnamRms = hnamBase + "Rms";
@@ -1229,20 +1274,20 @@ const DataMap& FembTestAnalyzer::processChannel(Index icha) {
     cout << myname << "ADC processing tools are missing." << endl;
     return res.setStatus(3);
   }
-  vector<string> ssgns;
+  vector<SignOption> isgns;
   if ( true ) {
-    ssgns.push_back("Both");
+    isgns.push_back(OptBothSigns);
   } else {
-    ssgns.push_back("Pos");
-    ssgns.push_back("Neg");
+    isgns.push_back(OptPositive);
+    isgns.push_back(OptNegative);
   }
   vector<bool> useAreas;
   useAreas.push_back(false);
   if ( ! doTickModRoi() ) useAreas.push_back(true);
   if ( true ) {
-    for ( string ssgn : ssgns ) {
+    for ( SignOption isgn : isgns ) {
       for ( bool useArea : useAreas ) {
-        res += getChannelResponse(icha, ssgn, useArea);
+        res += getChannelResponse(icha, isgn, useArea);
       }
     }
     //if ( isCalib() && doPeakRoi() ) res += getChannelDeviations(icha);
@@ -1321,7 +1366,7 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
     bool useBoth = true;
     vector<string> posValues;
     if ( useBoth ) {
-      posValues.push_back("Both");
+      posValues.push_back("");
     } else {
       posValues.push_back("Neg");
       posValues.push_back("Pos");
@@ -1330,6 +1375,8 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
     vector<bool> useAreas;
     useAreas.push_back(false);
     if ( doPeakRoi() ) useAreas.push_back(true);
+    bool haveFitSatMin = false;
+    bool haveFitSatMax = false;
     for ( bool useArea : useAreas ) {
       string sarea = useArea ? "Area" : "Height";
       // Loop over signs (pos, neg or both)
@@ -1373,12 +1420,14 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
             fnam = "fitSaturationMinHeight" + spos;
             if ( resc.haveFloat(fnam) ) {
               phsatMin->SetBinContent(icha+1, resc.getFloat(fnam));
+              haveFitSatMin = true;
             }
           }
           if ( phsatMax != nullptr ) {
             fnam = "fitSaturationMaxHeight" + spos;
             if ( resc.haveFloat(fnam) ) {
               phsatMax->SetBinContent(icha+1, resc.getFloat(fnam));
+              haveFitSatMax = true;
             }
           }
           // Fill RMS histos.
@@ -1415,72 +1464,80 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
         hists[hnamGms] = phGms;
       }
     }
-    // Underflow histogram.
-    // This is the ADC value at which each channel saturates for negative signals.
-    hnam = "hchaAdcMin";
-    httl = "ADC saturation; Channel; Lower saturation [ADC]";
-    TH1* phu = nullptr;
-    if ( phsatMin == nullptr ) {
-      phu = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
-    } else {
-      phu = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-      double addfac = useBoth ? 1.0 : -1.0;
+    // Calibration underflow and overflow histograms.
+    if ( isCalib() ) {
+      hnam = "hchaCalibAdcMin";
+      httl = "Calibration ADC min; Channel; ADC count";
+      TH1* phmin = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+      hists[hnam] = phmin;
+      hnam = "hchaCalibAdcMax";
+      httl = "Calibration ADC max; Channel; ADC count";
+      TH1* phmax = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+      hists[hnam] = phmax;
       for ( Index icha=0; icha<ncha; ++icha ) {
-        double val = 0.0;
-        double dval = 0.0;
-        double satmin = phsatMin->GetBinContent(icha+1);
-        if ( satmin ) {
-          double ped = php->GetBinContent(icha+1);
-          double dped = php->GetBinError(icha+1);
-          double satval = ped + addfac*satmin;
-          if ( satval > val ) {
-            val = satval;
-            dval = dped;
-          }
-        }
-        phu->SetBinContent(icha+1, val);
-        phu->SetBinError(icha+1, dval);
+        const DataMap& resc = processChannel(icha);
+        phmin->SetBinContent(icha+1, resc.getInt("calibAdcMin", -999));
+        phmax->SetBinContent(icha+1, resc.getInt("calibAdcMax", -999));
       }
     }
-    if ( phu != nullptr ) {
-      int icol = 17;
-      phu->SetLineColor(icol);
-      phu->SetMarkerColor(icol);
-      phu->SetFillColor(icol);
-      hists[hnam] = phu;
-    }
-    // Overflow histogram.
+    // Fit underflow histogram.
     // This is the ADC value at which each channel saturates for negative signals.
-    hnam = "hchaAdcMax";
-    httl = "ADC saturation; Channel; Upper saturation [ADC]";
-    TH1* pho = nullptr;
-    if ( phsatMax == nullptr ) {
-      pho = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
-    } else {
-      pho = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
-      for ( Index icha=0; icha<ncha; ++icha ) {
-        double val = 4096;
-        double dval = 0.0;
-        double satmax = phsatMax->GetBinContent(icha+1);
-        if ( satmax ) {
-          double ped = php->GetBinContent(icha+1);
-          double dped = php->GetBinError(icha+1);
-          double satval = ped + satmax;
-          if ( satval < val ) {
-            val = satval;
-            dval = dped;
+    if ( haveFitSatMin ) {
+      hnam = "hchaFitAdcMin";
+      httl = "ADC saturation; Channel; Lower saturation [ADC]";
+      TH1* phu = nullptr;
+      if ( phsatMin == nullptr ) {
+        phu = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
+      } else {
+        phu = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+        double addfac = useBoth ? 1.0 : -1.0;
+        for ( Index icha=0; icha<ncha; ++icha ) {
+          double val = 0.0;
+          double dval = 0.0;
+          double satmin = phsatMin->GetBinContent(icha+1);
+          if ( satmin ) {
+            double ped = php->GetBinContent(icha+1);
+            double dped = php->GetBinError(icha+1);
+            double satval = ped + addfac*satmin;
+            if ( satval > val ) {
+              val = satval;
+              dval = dped;
+            }
           }
+          phu->SetBinContent(icha+1, val);
+          phu->SetBinError(icha+1, dval);
         }
-        pho->SetBinContent(icha+1, val);
-        pho->SetBinError(icha+1, dval);
       }
+      if ( phu != nullptr ) hists[hnam] = phu;
     }
-    if ( pho != nullptr ) {
-      int icol = 17;
-      pho->SetLineColor(icol);
-      pho->SetMarkerColor(icol);
-      pho->SetFillColor(icol);
-      hists[hnam] = pho;
+    // Fit overflow histogram.
+    // This is the ADC value at which each channel saturates for negative signals.
+    if ( haveFitSatMax ) {
+      hnam = "hchaFitAdcMax";
+      httl = "ADC saturation; Channel; Upper saturation [ADC]";
+      TH1* pho = nullptr;
+      if ( phsatMax == nullptr ) {
+        pho = dynamic_cast<TH1*>(php->Clone(hnam.c_str()));
+      } else {
+        pho = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
+        for ( Index icha=0; icha<ncha; ++icha ) {
+          double val = 4096;
+          double dval = 0.0;
+          double satmax = phsatMax->GetBinContent(icha+1);
+          if ( satmax ) {
+            double ped = php->GetBinContent(icha+1);
+            double dped = php->GetBinError(icha+1);
+            double satval = ped + satmax;
+            if ( satval < val ) {
+              val = satval;
+              dval = dped;
+            }
+          }
+          pho->SetBinContent(icha+1, val);
+          pho->SetBinError(icha+1, dval);
+        }
+      }
+      if ( pho != nullptr ) hists[hnam] = pho;
     }
     // Signal deviation histograms.
     if ( isCalib() ) {
@@ -1657,7 +1714,7 @@ int FembTestAnalyzer::writeCalibFcl() {
   string fclName = dirName + "/" + toolName + ".fcl";
   ofstream fout(fclName.c_str());
   ostringstream ssgain, ssamin;
-  string gainName = "fitGainHeightBoth";
+  string gainName = "fitGainHeight";
   vector<string> aminNames = {"adcminWithPed", "lowSaturatedRawAdcMax"};
   vector<string> checkNames = aminNames;
   checkNames.push_back(gainName);
@@ -1786,31 +1843,68 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
     // Pedestal vs. channel with ADC ranges
     } else if ( sopt == "pedlim" ) {
-      TH1* ph1 = processAll().getHist("hchaAdcMin");
-      TH1* ph2 = processAll().getHist("hchaAdcMax");
-      TH1* php = processAll().getHist("hchaPed");
+      string hnam1;
+      string hnam2;
+      string hnamp = "hchaPed";
+      string sttl;
+      if ( isCalib() ) {
+        hnam1 = "hchaCalibAdcMin";
+        hnam2 = "hchaCalibAdcMax";
+        sttl = "ADC pedestals and calibration ranges for FEMB " + sfemb;
+      } else if ( doResponseFit() ) {
+        hnam1 = "hchaFitAdcMin";
+        hnam2 = "hchaFitAdcMax";
+        sttl = "ADC pedestals and fitted ranges for FEMB " + sfemb;
+      } else {
+        cout << myname << "Plot " << sopt << " requires calibration or reponse fitting." << endl;
+        return nullptr;
+      }
       if ( ! doRoi() ) {
         cout << myname << "Plot " << sopt << " requires ROIs." << endl;
         return nullptr;
       }
-      if ( php == nullptr || ph1 == nullptr || ph2 == nullptr ) {
-        cout << myname << "Unable to find hchaAdcMin, hchaAdcMax or hchaPed in this result:" << endl;
+      TH1* ph1 = processAll().getHist(hnam1);
+      TH1* ph2 = processAll().getHist(hnam2);
+      TH1* php = processAll().getHist(hnamp);
+      if ( php == nullptr ) {
+        cout << myname << "Unable to find histogram " << hnamp << " in this result:" << endl;
         processAll().print();
         return nullptr;
-      } else if ( int rstat = man.add(ph2, "H") ) {
-        cout << myname << "Manipulator returned error " << rstat << endl;
+      } else if ( ph1 == nullptr && ph2 == nullptr ) {
+        cout << myname << "Unable to find " << hnam1 << " or " << hnam2 << " in this result:" << endl;
+        processAll().print();
+        return nullptr;
       } else {
         //ph1->SetFillStyle(3001);
+        if ( ph1 == nullptr ) {
+          ph1 = dynamic_cast<TH1*>(php->Clone(hnam1.c_str()));
+          ph1->SetDirectory(0);
+          for ( int ibin=0; ibin<=ph1->GetNbinsX(); ++ibin ) ph1->SetBinContent(ibin, 0);
+        }
+        if ( ph2 == nullptr ) {
+          ph2 = dynamic_cast<TH1*>(php->Clone(hnam2.c_str()));
+          ph2->SetDirectory(0);
+          for ( int ibin=0; ibin<=ph2->GetNbinsX(); ++ibin ) ph2->SetBinContent(ibin, 4095);
+        }
+        man.add(ph2, "H");
         man.add(ph1, "H same");
         man.add(php, "P same");
-        man.hist()->SetFillColor(10);
-        man.hist()->SetLineColor(10);
-        man.hist()->SetLineWidth(0);
-        string sttl = "ADC pedestals and range for FEMB " + sfemb;
-        man.hist()->SetTitle(sttl.c_str());
+        TH1* ph1n = man.getHist(hnam1);
+        TH1* ph2n = man.getHist(hnam2);
+        TH1* phpn = man.getHist(hnamp);
+        man.setTitle(sttl.c_str());
         man.hist()->GetYaxis()->SetTitle("ADC count");
-        man.setFrameFillColor(17);
-        man.setRangeY(0, 4100);
+        int icol = 17;    // Color for excluded regions.
+        man.setFrameFillColor(icol);
+        ph1n->SetLineColor(icol);
+        ph1n->SetMarkerColor(icol);
+        ph1n->SetFillColor(icol);
+        ph1n->SetLineWidth(0);
+        icol = 10;        // Color for included region
+        ph2n->SetFillColor(icol);
+        ph2n->SetLineColor(icol);
+        ph2n->SetLineWidth(0);
+        man.setRangeY(0, 4200);
         man.addVerticalModLines(16);
         return draw(&man);
       }
@@ -1822,7 +1916,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       }
       bool useArea = sopt == "gaina";
       string sarea = useArea ? "area" : "height";
-      string hname = useArea ? "hgainAreaBoth" : "hgainHeightBoth";
+      string hname = useArea ? "hgainArea" : "hgainHeight";
       TH1* ph = processAll().getHist(hname);
       if ( ph == nullptr ) {
         cout << myname << "Unable to find histogram " << hname << " in result:" << endl;
@@ -1850,9 +1944,9 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         cout << myname << "Plot " << sopt << " requires ROIs." << endl;
         return nullptr;
       }
-      string hnamdev = sopt == "rmsh" ? "hallHeightBothGms" : "hallAreaBothGms";
-      string hnamrms = sopt == "rmsh" ? "hallHeightBothRms" : "hallAreaBothRms";
-      string hnamars = sopt == "rmsh" ? "hallHeightBothArs" : "hallAreaBothArs";
+      string hnamdev = sopt == "rmsh" ? "hallHeightGms" : "hallAreaGms";
+      string hnamrms = sopt == "rmsh" ? "hallHeighthRms" : "hallAreaRms";
+      string hnamars = sopt == "rmsh" ? "hallHeightArs" : "hallAreaArs";
       vector<string> missing;
       for ( string name : {hnamdev, hnamrms, hnamars} )
         if ( ! processAll().haveHist(name) ) missing.push_back(name);
@@ -1966,9 +2060,9 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         ymin = -200;
         ymax = 400;
       }
-      if ( sopt == "resph" ) gnams = {"gchaRespHeightBothFitPointsUnc", "gchaRespHeightBothFitPointsUnc"};
+      if ( sopt == "resph" ) gnams = {"gchaRespHeightFitPointsUnc", "gchaRespHeightFitPointsUnc"};
       if ( sopt == "respa" ) {
-        gnams = {"gchaRespAreaBothFitPointsUnc", "gchaRespAreaBoth"};
+        gnams = {"gchaRespAreaFitPointsUnc", "gchaRespArea"};
         if ( isNoCalib() ) {
           ymin = -15000;
           ymax = 25000;
@@ -1978,12 +2072,12 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         }
       }
       if ( sopt == "respresh" ) {
-        gnams = {"gchaRespHeightBothRes"};
+        gnams = {"gchaRespHeightRes"};
         ymin = -5;
         ymax = 5;
       }
       if ( sopt == "respresa" ) {
-        gnams = {"gchaRespAreaBothRes"};
+        gnams = {"gchaRespAreaRes"};
         ymin = -5;
         ymax = 5;
       }

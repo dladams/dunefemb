@@ -31,6 +31,15 @@ public:
   //  OptRoiTickMod - Use the tickmod ROI finder
   enum RoiOption { OptNoRoi, OptRoiPeak, OptRoiTickMod };
 
+  // Signal sign options.
+  //      OptNoSign - sign not specified
+  //    OptPositive - positive signal only
+  //    OptNegative - sign not specified
+  //   OptBothSigns - both positive and negative signals
+  enum SignOption { OptNoSign, OptNegative, OptPositive, OptBothSigns };
+
+public:
+
   // Ctor from a FEMB sample set.
   // opt = 100*doDraw + 10*ropt + popt where
   //   doDraw indicates to draw canvas with each succesful call to draw(...)
@@ -117,12 +126,21 @@ public:
   // Otherwise, a step size of Q = CV = fembCfF()*fembVmV() is assumed.
   double chargeFc(Index ievt);
 
+  // Return if a reponse fit is done for each channel.
+  // For now this is hardwired but later might be configured.
+  bool doResponseFit() const;
+
+  // Return the name of the function used in the initial response fit.
+  // Argment indicates whether positive, negative or both signals are used in the fit.
+  // For now these are are hardwired but later they might be configuration parameters.
+  std::string responseFitFunctionName(SignOption isgn) const;
+
   // Return a graph of signal vs. input charge.
   // Error bars are the RMS of each measurement (not the RMS of the mean).
   const DataMap& processChannelEvent(Index icha, Index ievt);
 
   // Process a channel.
-  DataMap getChannelResponse(Index icha, std::string usePosFlag, bool useArea =true);
+  DataMap getChannelResponse(Index icha, SignOption isgn, bool useArea =true);
   DataMap getChannelDeviations(Index icha);
   const DataMap& processChannel(Index icha);
 

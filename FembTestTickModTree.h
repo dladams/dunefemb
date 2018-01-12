@@ -11,6 +11,7 @@
 
 #include <string>
 #include "FembTestTickModData.h"
+#include "dune/DuneInterface/Data/DataMap.h"
 #include "TTree.h"
 
 class AdcChannelData;
@@ -54,7 +55,13 @@ public:
   // Fill from ADC channel data.
   // The period is taken from the current data and, if there is sufficient data,
   // one entry is made for each of tickmod = 0, ..., period-1.
-  void fill(AdcChannelData& acd);
+  // The returned result contains the following:
+  //     int tickmodPeriod    - Period: tickmod = tick%tickmodPeriod
+  //     int tickmodMin       - Tickmod where signal average is minimum
+  //     int tickmodMax       - Tickmod where signal average is maximum
+  //   float tickmodMinSignal - Signal average at the minimum
+  //   float tickmodMaxSignal - Signal average at the maximum
+  DataMap fill(AdcChannelData& acd);
 
   // Write the tree to the file.
   void write();

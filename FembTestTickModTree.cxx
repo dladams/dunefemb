@@ -112,7 +112,7 @@ void FembTestTickModTree::fill(const FembTestTickModData& data) {
 
 //**********************************************************************
 
-void FembTestTickModTree::fill(AdcChannelData& acd) {
+DataMap FembTestTickModTree::fill(AdcChannelData& acd) {
   // Save the data to restore after filling.
   FembTestTickModData dataSave = m_data;
   Index ntck = acd.samples.size();
@@ -122,12 +122,13 @@ void FembTestTickModTree::fill(AdcChannelData& acd) {
   int itqmax = -1;
   double qmin = 1.e10;
   double qmax = -1.e10;
+  int chan = acd.channel;
   // Create vector of tree entries for this channel data.
   vector<FembTestTickModData> ents(ntmd, m_data);
   // Fill add data except peak positions for each tickmod.
   for ( Index itmd=0; itmd<ntmd; ++itmd ) {
     FembTestTickModData& data = ents[itmd];
-    data.chan = acd.channel;
+    data.chan = chan;
     data.pede = acd.pedestal;
     data.radc.clear();
     data.qcal.clear();
@@ -187,6 +188,15 @@ void FembTestTickModTree::fill(AdcChannelData& acd) {
   }
   // Restore data to original state.
   m_data = dataSave;
+  // Construct result.
+  DataMap res;
+  res.setInt("tickmodChannel", chan);
+  res.setInt("tickmodPeriod", ntmd);
+  res.setInt("tickmodMin", itqmin);
+  res.setInt("tickmodMax", itqmax);
+  res.setFloat("tickmodMinSignal", qmin);
+  res.setFloat("tickmodMaxSignal", qmax);
+  return res;
 }
 
 //**********************************************************************
