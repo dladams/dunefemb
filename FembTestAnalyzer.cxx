@@ -2169,6 +2169,8 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         man.addHistFun(1);
         man.addHistFun(0);
         man.addVerticalModLines(64);
+        man.showUnderflow();
+        man.showOverflow();
         return draw(&man);
       }
     } else if ( sopt == "resphp" || sopt == "resphn" ||

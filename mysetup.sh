@@ -1,6 +1,5 @@
-REL=v06_62_00
-LARREL=$REL
-DUNREL=${REL}
+LARREL=v06_63_00
+DUNREL=v06_63_00
 source $HOME/ups/setups
 DEVDIR=$HOME/dudev/dudev01
 if test -r devdir.dat; then
