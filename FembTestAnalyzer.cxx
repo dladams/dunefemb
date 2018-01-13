@@ -1379,14 +1379,15 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
     bool haveFitSatMax = false;
     for ( bool useArea : useAreas ) {
       string sarea = useArea ? "Area" : "Height";
+      string gunitLab = gainUnit().size() ? " [" + gainUnit() + "]" : "";
       // Loop over signs (pos, neg or both)
       for ( string spos : posValues ) {
         string hnam = "hgain" + sarea + spos;
-        string httl = sarea + " " + spos + " Gain; Channel; Gain [ADC/ke]";
+        string httl = sarea + " " + spos + " Gain; Channel; Gain" + gunitLab;
         TH1* phg = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
         hists[hnam] = phg;
         string hnamd = "hgaindist" + sarea + spos;
-        string httld = sarea + " " + spos + " Gain; Gain [ADC/ke]; # channels";
+        string httld = sarea + " " + spos + " Gain; Gain" + gunitLab + "; # channels";
         TH1* phgd = new TH1F(hnamd.c_str(), httld.c_str(), 100, 0, -1);
         hists[hnamd] = phgd;
         // Deviation histograms.
@@ -1602,6 +1603,14 @@ bool FembTestAnalyzer::haveTools() const {
 
 //**********************************************************************
 
+string FembTestAnalyzer::gainUnit() const {
+  if ( signalUnit().substr(0,3) == "ADC" ) return "ADC/ke";
+  if ( signalUnit() == "ke" ) return "";
+  return signalUnit() + "/ke";
+}
+
+//**********************************************************************
+
 FembTestPulseTree* FembTestAnalyzer::pulseTree(bool useAll) {
   const string myname = "FembTestAnalyzer::pulseTree: ";
   if ( m_ptreePulse != nullptr ) return m_ptreePulse.get();
@@ -1666,17 +1675,18 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree(bool useAll) {
 FembTestTickModTree* FembTestAnalyzer::tickModTree(bool useAll) {
   const string myname = "FembTestAnalyzer::tickModTree: ";
   if ( m_ptreeTickMod != nullptr ) return m_ptreeTickMod.get();
-  if ( ! isCalib() ) {
-    cout << myname << "Must have calibration for tick mod tree." << endl;
-    return nullptr;
-  }
+  string caltyp = isCalib() ? "calib" : "raw";
+  //if ( ! isCalib() ) {
+  //  cout << myname << "Must have calibration for tickmod tree." << endl;
+  //  return nullptr;
+  //}
   if ( ! haveTools() ) {
     cout << myname << "ADC processing tools are missing." << endl;
     return nullptr;
   }
   if ( useAll ) processAll();
   ostringstream ssnam;
-  ssnam << "femb_test_tickmod_femb" << femb() << "_g" << gainIndex()
+  ssnam << "femb_" << caltyp << "_tickmod_femb" << femb() << "_g" << gainIndex()
           << "_s" << shapingIndex()
           << "_p" << (extPulse() ? "ext" : "int");
   if ( ! extClock() ) ssnam << "_cint";

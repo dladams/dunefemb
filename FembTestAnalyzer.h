@@ -90,6 +90,7 @@ public:
   int shapingIndex() const { return reader()==nullptr ? -1 : reader()->shapingIndex(); }
   bool extPulse() const { return reader() == nullptr ? false : reader()->extPulse(); }
   bool extClock() const { return reader() == nullptr ? false : reader()->extClock(); }
+  std::string signalUnit() const { return m_signalUnit; }
 
   // Other getters.
   // If useAll is true, processAll is called before building tree.
@@ -97,6 +98,9 @@ public:
   FembTestPulseTree* pulseTree(bool useAll =true);
   FembTestTickModTree* tickModTree(bool useAll =true);
   Index tickPeriod() const { return m_tickPeriod; }
+
+  // The unit for gain are signal/ke.
+  std::string gainUnit() const;
 
   // Setters.
   bool setDoDraw(bool val) { return m_doDraw = val; }
