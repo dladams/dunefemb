@@ -74,5 +74,6 @@
   gROOT->ProcessLine(".L FembTestAnalyzer.cxx+");
   gROOT->ProcessLine(".L FembDatasetAnalyzer.cxx+");
   gROOT->ProcessLine(".L draw.cxx+");
+  gROOT->ProcessLine(".L drawall.C");
   cout << "Finished loading." << endl;
 }

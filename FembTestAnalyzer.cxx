@@ -26,6 +26,22 @@ using std::ofstream;
 
 //**********************************************************************
 
+FembTestAnalyzer::Index FembTestAnalyzer::typeIndex(SignOption isgn, bool useArea) {
+  if ( isgn == OptBothSigns ) {
+    if ( useArea ) return 1;
+    else return 0;
+  } else if ( isgn == OptPositive ) {
+    if ( useArea ) return 3;
+    else return 2;
+  } else if ( isgn == OptNegative ) {
+    if ( useArea ) return 5;
+    else return 4;
+  }
+  return typeSize();
+}
+
+//**********************************************************************
+
 FembTestAnalyzer::
 FembTestAnalyzer(int opt, int a_femb, int a_gain, int a_shap, 
                  std::string a_tspat, bool a_isCold,
@@ -145,6 +161,7 @@ find(int a_gain, int a_shap, bool a_extPulse, bool a_extClock, string dir) {
   DuneFembFinder fdr;
   chanevtResults.clear();
   chanResults.clear();
+  chanResponseResults.clear();
   cout << myname << "Fetching reader." << endl;
   if ( dir.size() ) {
     m_reader = std::move(fdr.find(dir, tspat()));
@@ -154,6 +171,7 @@ find(int a_gain, int a_shap, bool a_extPulse, bool a_extClock, string dir) {
   cout << myname << "Done fetching reader." << endl;
   chanevtResults.resize(nChannel(), vector<DataMap>(nEvent()));
   chanResults.resize(nChannel());
+  chanResponseResults.resize(typeSize(), vector<DataMap>(nChannel()));
   return 0;
 }
 
@@ -491,8 +509,8 @@ processChannelEvent(Index icha, Index ievt) {
         float xmax = areaMax[isgn];
         float xavg = 0.5*(xmin + xmax);
         float xcen = int(xavg + 0.5);
-        int   nbin = isNoCalib() ?  64 : 100;
-        float dbin = isNoCalib() ? 1.0 : 0.5;
+        int   nbin = isNoCalib() ? 100 : 100;
+        float dbin = isNoCalib() ? 5.0 : 0.5;
         xmin = xcen - 0.5*nbin*dbin;
         xmax = xcen + 0.5*nbin*dbin;
         TH1* ph = new TH1F(hnam.c_str(), httl.c_str(), nbin, xmin, xmax);
@@ -660,23 +678,32 @@ processChannelEvent(Index icha, Index ievt) {
 
 //**********************************************************************
 
-DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool useArea) {
+const DataMap& FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool useArea) {
   const string myname = "FembTestAnalyzer::getChannelResponse: ";
-  DataMap res;
+  Index ityp = typeIndex(isgn, useArea);
+  if ( ityp == typeSize() ) {
+    static DataMap empty(1);
+    return empty;
+  }
+  DataMap& res = chanResponseResults[ityp][icha];
+  if ( res.haveInt("channel") ) return res;
   const DuneFembReader* prdr = reader();
   if ( prdr == nullptr ) {
     cout << myname << "No reader found." << endl;
-    return DataMap(1);
+    static DataMap badres(1);
+    return badres;
   }
   Index nevt = nEvent();
   Index ievt0 = 0;  // Event with zero charge, i.e. ievt0+1 is one unit.
   if ( !prdr->extPulse()  && !prdr->intPulse() ) {
     cout << myname << "Reader does not specify if pulse is internal or external." << endl;
-    return DataMap(2);
+    static DataMap badres(2);
+    return badres;
   }
   if ( ! haveTools() ) {
     cout << myname << "ADC processing tools are missing." << endl;
-    return DataMap(3);
+    static DataMap badres(3);
+    return badres;
   }
   // Note that we have to proceed without ROIs because we want to record peds and nkes
   bool pulseIsExternal = prdr->extPulse();
@@ -687,7 +714,8 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
   if ( useBoth || isgn == OptPositive ) usePosValues.push_back(true);
   if ( usePosValues.size() == 0 ) {
     cout << myname << "Invalid value for isgn: " << isgn << endl;
-    return DataMap(3);
+    static DataMap badres(4);
+    return badres;
   }
   string styp = useArea ? "Area" : "Height";
   ostringstream sscha;
@@ -939,6 +967,16 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
   TF1* pfit0 = nullptr;
   TF1* pfit = nullptr;
   TF1* prefit = nullptr;
+  // Evaluate fit range.
+  // For areas, we take this from the height fit.
+  // For heights, we first fit with saturation to determine the range.
+  double xfmin = xf[0] - 1.0;
+  double xfmax = xf[nptf-1] + 1.0;
+  if ( useArea ) {
+    const DataMap& reshgt = getChannelResponse(icha, isgn, false);
+    xfmin = reshgt.getFloat("refitXminHeight" + signLabel, xfmin);
+    xfmax = reshgt.getFloat("refitXmaxHeight" + signLabel, xfmax);
+  }
   if ( nptf > 0 ) {
     if ( sfit == "fgain" ) {
       pfit = new TF1("fgain", "[0]*x");
@@ -1031,7 +1069,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
       fitKelOff = true;
     } else {
       cout << myname << "Invalid value for sfit: " << sfit << endl;
-      return DataMap(4);
+      return res.setStatus(5);
     }
     // Fit.
     pfit->SetParName(0, "gain");
@@ -1040,7 +1078,7 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
     pfit0 = pfit;
     Index npar = pfit->GetNpar();
     //pgf->Fit(pfit, "", "", xfmin, x[2]);
-    pgfFit->Fit(pfit, "Q");
+    pgfFit->Fit(pfit, "Q", "", xfmin, xfmax);
     pgf->GetListOfFunctions()->Add(pfit);
     gain = pfit->GetParameter(0);
     if ( fitAdcMin ) adcmin = pfit->GetParameter(pfit->GetParNumber("adcmin"));
@@ -1048,20 +1086,11 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
     if ( fitKelOff ) keloff = pfit->GetParameter(pfit->GetParNumber("keloff"));
     float qmin = adcmin/gain - keloff;
     float qmax = adcmax/gain - keloff;
-/*
-    // Refit without min saturation.
-    if ( fitAdcMin ) {
-      int ipar = pfit->GetParNumber("adcmin");
-      pfit->FixParameter(ipar, adcmin);
-      pgf->Fit(pfit, "Q+");
-    }
-*/
     // Refit without min saturation.
     // Exclude points close to saturation.
+    // For area, we use the lower limit determined with heights.
     adcfloor = adcmin;
     if ( true ) {
-      double xfmin = xf[0] - 1.0;
-      double xfmax = qmax;
       adcfloor = adcmin + 400;
       for ( Index ipt=0; ipt<nptf; ++ipt ) {
         if ( yf[ipt] < adcfloor ) {
@@ -1075,10 +1104,12 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
       pgfFit->Fit(prefit, "Q", "", xfmin, xfmax);
       pgf->GetListOfFunctions()->Add(pfit);
       pfit = prefit;
+      res.setFloat("refitXmin" + styp + signLabel, xfmin);
+      res.setFloat("refitXmax" + styp + signLabel, xfmax);
     }
     // Record the gain.
-    gain = prefit->GetParameter(0);
-    double gainUnc = prefit->GetParError(0);
+    gain = pfit->GetParameter(0);
+    double gainUnc = pfit->GetParError(0);
     string fpname = "fitGain" + styp + signLabel;
     string fename = fpname + "Unc";
     res.setFloat(fpname, gain);
@@ -1152,8 +1183,10 @@ DataMap FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn, bool u
     xres.push_back(xpt);
     yres.push_back(ydif/gain);
     dyres.push_back(dyf[ipt]/gain);
-    if ( fitAdcMin && (yfit <= 0.9999*adcfloor) ) continue;
-    if ( fitAdcMax && (yfit >= 0.9999*adcmax) ) continue;
+    //if ( fitAdcMin && (yfit <= 0.9999*adcfloor) ) continue;
+    //if ( fitAdcMax && (yfit >= 0.9999*adcmax) ) continue;
+    if ( xpt < xfmin ) continue;
+    if ( xpt > xfmax ) continue;
     xrese.push_back(xpt);
     yrese.push_back(ydif/gain);
     dyrese.push_back(dyf[ipt]/gain);
@@ -1228,6 +1261,11 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
   TH1* phAdv = new TH1F(hnamAdv.c_str(), httlAdv.c_str(), 50, 0, 5);
   vector<TH1*> hists = {phDev, phAdv};
   Index nevt = nEvent();
+  Index devBulkCount = 0;
+  Index devTailCount = 0;
+  float devsum = 0.0;
+  float dev2sum = 0.0;
+  float devlim = 5.0;
   for ( Index ievt=0; ievt<nevt; ++ievt ) {
     if ( chargeFc(ievt) == 0.0 ) continue;
     const DataMap& resevt = processChannelEvent(icha, ievt);
@@ -1251,8 +1289,16 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
       if ( nOver ) continue;
       const vector<float> devs = resevt.getFloatVector(devVecName);
       for ( float dev : devs ) {
+        float adv = fabs(dev);
+        if ( adv > devlim ) {
+          ++devTailCount;
+        } else {
+          ++devBulkCount;
+          devsum += dev;
+          dev2sum += dev*dev;
+        }
         phDev->Fill(dev);
-        phAdv->Fill(fabs(dev));
+        phAdv->Fill(adv);
       }
     }
   }
@@ -1261,6 +1307,14 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
     ph->SetStats(0);
     res.setHist(ph, true);  
   }
+  float devMean = devBulkCount > 0 ? devsum/devBulkCount : 0.0;
+  float devRms = devBulkCount > 0 ? sqrt(dev2sum/devBulkCount) : 0.0;
+  Index devCount = devBulkCount + devTailCount;
+  float devTailFrac = float(devTailCount)/devCount;
+  res.setInt("devCount", devCount);
+  res.setFloat("devMean", devMean);
+  res.setFloat("devRms", devRms);
+  res.setFloat("devTailFrac", devTailFrac);
   return res;
 }
 
@@ -1541,12 +1595,28 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
       if ( pho != nullptr ) hists[hnam] = pho;
     }
     // Signal deviation histograms.
+    Index devChannelCount = 0;
+    Index devBulkCount = 0;
+    Index devTailCount = 0;
+    float devsum = 0.0;
+    float dev2sum = 0.0;
     if ( isCalib() ) {
       TH1* phdev = nullptr;
       TH1* phadv = nullptr;
       for ( Index icha=0; icha<ncha; ++icha ) {
         const DataMap& resevt = processChannel(icha);
         TH1* phdevCha = resevt.getHist("hdev");
+        Index count = resevt.getInt("devCount");
+        if ( count > 0 ) {
+          ++devChannelCount;
+          Index ntail = count*resevt.getFloat("devTailFrac") + 0.1;
+          Index nbulk = count - ntail;
+          devBulkCount += nbulk;
+          devTailCount += ntail;
+          devsum += nbulk*resevt.getFloat("devMean");
+          float devrms = resevt.getFloat("devRms");
+          dev2sum += nbulk*devrms*devrms;
+        }
         if ( phdevCha == nullptr ) {
           cout << myname << "Result for channel " << icha << " does not have histogram hdev" << endl;
           continue;
@@ -1578,6 +1648,15 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
       }
       allResult.setHist(phdev, true);
       if ( phadv != nullptr ) allResult.setHist(phadv, true);
+      float devMean = devBulkCount > 0 ? devsum/devBulkCount : 0.0;
+      float devRms = devBulkCount > 0 ? sqrt(dev2sum/devBulkCount) : 0.0;
+      Index devCount = devBulkCount + devTailCount;
+      float devTailFrac = float(devTailCount)/devCount;
+      allResult.setInt("devChannelCount", devChannelCount);
+      allResult.setInt("devCount", devCount);
+      allResult.setFloat("devMean", devMean);
+      allResult.setFloat("devRms", devRms);
+      allResult.setFloat("devTailFrac", devTailFrac);
     }
   }  // end if doRoi()
   // Record histograms.
@@ -1830,7 +1909,15 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
   ssfemb << femb();
   string sfemb = ssfemb.str();
   // Create sample label.
-  TLatex* plab = new TLatex(0.01, 0.015, reader()->label().c_str());
+  string slab = reader()->label().c_str();
+  if      ( isHeightCalib() ) slab += " HeightCal";
+  else if ( isAreaCalib()   ) slab += " AreaCal";
+  else if ( isNoCalib()     ) slab += " NoCal";
+  else                        slab += " UnknownCal";
+  if      ( doPeakRoi() )    slab += " PeakROI";
+  else if ( doTickModRoi() ) slab += " TickmodROI";
+  else                       slab += " UknownROI";
+  TLatex* plab = new TLatex(0.01, 0.015, slab.c_str());
   plab->SetNDC();
   plab->SetTextSize(0.035);
   plab->SetTextFont(42);
@@ -1955,7 +2042,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         return nullptr;
       }
       string hnamdev = sopt == "rmsh" ? "hallHeightGms" : "hallAreaGms";
-      string hnamrms = sopt == "rmsh" ? "hallHeighthRms" : "hallAreaRms";
+      string hnamrms = sopt == "rmsh" ? "hallHeightRms" : "hallAreaRms";
       string hnamars = sopt == "rmsh" ? "hallHeightArs" : "hallAreaArs";
       vector<string> missing;
       for ( string name : {hnamdev, hnamrms, hnamars} )
@@ -2010,14 +2097,45 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         cout << myname << "Drawing " << sopt << " is only available for calibrated samples." << endl;
         return nullptr;
       }
+      const DataMap& res = processAll();
       string hnam = "h" + sopt;
-      TH1* ph = processAll().getHist(hnam);
+      TH1* ph = res.getHist(hnam);
       if ( ph == nullptr ) {
         cout << myname << "Unable to find histogram " << hnam << ". " << endl;
         return nullptr;
       }
       man.add(ph);
-      if ( sopt == "dev" ) man.setRangeX(-5.0, 5.0);
+      if ( sopt == "dev" ) {
+        man.setRangeX(-5.0, 5.0);
+        vector<string> slabs;
+        ostringstream ssline;
+        ssline.str("");
+        ssline << "   # chan: " << res.getInt("devChannelCount");
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "    Count: " << res.getInt("devCount");
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "     Mean: " << setprecision(0) << fixed << 1000.0*res.getFloat("devMean") << " e";
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "      RMS: " << setprecision(0) << fixed << 1000.0*res.getFloat("devRms") << " e";
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "Tail frac.: " << setprecision(3) << fixed << res.getFloat("devTailFrac");
+        slabs.push_back(ssline.str());
+        double xlab = 0.77;
+        double ylab = 0.85;
+        double dylab = 0.045;
+        for ( string slab : slabs ) {
+          TLatex* plab = new TLatex(xlab, ylab, slab.c_str());
+          plab->SetNDC();
+          plab->SetTextSize(0.035);
+          plab->SetTextFont(42);
+  	  man.add(plab, "");
+          ylab -= dylab;
+        }
+      }
       man.showUnderflow();
       man.showOverflow();
       return draw(&man);
@@ -2135,6 +2253,31 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       man.showOverflow();
       if ( sopt == "dev" ) {
         man.setRangeX(-5.0, 5.0);
+        vector<string> slabs;
+        ostringstream ssline;
+        ssline.str("");
+        ssline << "    Count: " << res.getInt("devCount");
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "     Mean: " << setprecision(0) << fixed << 1000.0*res.getFloat("devMean") << " e";
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "      RMS: " << setprecision(0) << fixed << 1000.0*res.getFloat("devRms") << " e";
+        slabs.push_back(ssline.str());
+        ssline.str("");
+        ssline << "Tail frac.: " << setprecision(3) << fixed << res.getFloat("devTailFrac");
+        slabs.push_back(ssline.str());
+        double xlab = 0.77;
+        double ylab = 0.85;
+        double dylab = 0.045;
+        for ( string slab : slabs ) {
+          TLatex* plab = new TLatex(xlab, ylab, slab.c_str());
+          plab->SetNDC();
+          plab->SetTextSize(0.035);
+          plab->SetTextFont(42);
+  	  man.add(plab, "");
+          ylab -= dylab;
+        }
       }
       return draw(&man);
     }
@@ -2195,6 +2338,8 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
             man.addVerticalModLines(64, xoff);
           }
         }
+        man.showUnderflow();
+        man.showOverflow();
         return draw(&man);
       }
     } else if ( sopt == "devp" || sopt == "devn" ) {

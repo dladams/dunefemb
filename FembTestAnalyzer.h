@@ -40,11 +40,27 @@ public:
 
 public:
 
+  // # of signal type indices.
+  static Index typeSize() { return 6; }
+
+  // Signal type index.
+  // ityp = 0 - Height, both signs
+  //        1 - Area, both signs
+  //        2 - Height, positive pulses
+  //        3 - Area, positive pulses
+  //        4 - Height, negative pulses
+  //        5 - Area, negative pulses
+  //  For anything else, typeSize() is returned.
+  static Index typeIndex(SignOption isgn, bool useArea);
+
+public:
+
   // Ctor from a FEMB sample set.
   // opt = 100*doDraw + 10*ropt + popt where
   //   doDraw indicates to draw canvas with each succesful call to draw(...)
   //   ropt is the ROI option (see enum above)
   //   popt is the processing option (see enum above) and:
+  // This ctor is called by the other two.
   FembTestAnalyzer(int opt, int a_femb, std::string a_tspat ="", bool a_isCold =true);
 
   // Ctor from file dir and pattern.
@@ -144,7 +160,7 @@ public:
   const DataMap& processChannelEvent(Index icha, Index ievt);
 
   // Process a channel.
-  DataMap getChannelResponse(Index icha, SignOption isgn, bool useArea =true);
+  const DataMap& getChannelResponse(Index icha, SignOption isgn, bool useArea =true);
   DataMap getChannelDeviations(Index icha);
   const DataMap& processChannel(Index icha);
 
@@ -169,8 +185,10 @@ public:
 public:
 
   int dbg = 0;
-  std::vector<std::vector<DataMap>> chanevtResults;    // results[icha][ievt]
-  std::vector<DataMap> chanResults;    // results[icha][ievt]
+
+  std::vector<std::vector<DataMap>> chanevtResults;       // [icha][ievt]
+  std::vector<std::vector<DataMap>> chanResponseResults;  // [ityp][icha]
+  std::vector<DataMap> chanResults;                       // [icha]
   DataMap allResult;
 
 private:

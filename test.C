@@ -5,10 +5,11 @@
   int opt = 121;    // tickmod ROIs
   opt = 111;        // peak ROIs
   FembTestAnalyzer ftc(opt, ifmb, 2, 2, "", true);
+  FembTestAnalyzer fta(110, ifmb, 2, 2, "", true);
   ftc.setTickPeriod(497);
-  ftc.processAll();
-  TTree* ptree = ftc.tickModTree()->tree();
-  FembTestTickModViewer tmv(*ftc.tickModTree());
+  // ftc.processAll();
+  // TTree* ptree = ftc.tickModTree()->tree();
+  // FembTestTickModViewer tmv(*ftc.tickModTree());
   //ftc20.dbg=4;
   //ftc20.processChannelEvent(8,0);
   //ftc20.processChannelEvent(8,4);

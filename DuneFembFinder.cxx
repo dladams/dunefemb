@@ -254,8 +254,8 @@ Index gain, Index shap, bool extPulse, bool extClock) {
     sslab << "FEMB " << fembId << " g" << gain << " s" << shap
           << (tspat.size() ? " " : "") << tspat
           << " " << (isCold ? "cold" : "warm")
-          << " " << (extPulse ? "ext" : "int") << "Pulse"
-          << " " << (extClock ? "ext" : "int") << "Clock";
+          << " " << (extPulse ? "ext" : "int") << "P"
+          << " " << (extClock ? "ext" : "int") << "C";
     prdr->setLabel(sslab.str());
   }
   return prdr;
