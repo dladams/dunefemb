@@ -30,7 +30,7 @@ public:
   FembTestTickModTree& tmt() { return m_tmt; }
   const FembTestTickModTree& tmt() const { return m_tmt; }
   Index size() const { return tmt().size(); }
-  const FembTestTickModData* read(Index ient) { return tmt().read(ient); }
+  const FembTestTickModData* read(Index icha, Index ient) { return tmt().read(icha, ient); }
   const FembTestTickModData* read() { return tmt().read(); }
   bool doDraw() const { return m_doDraw; }
   Name label() const { return m_label; }

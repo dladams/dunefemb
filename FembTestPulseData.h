@@ -8,11 +8,14 @@
 #ifndef FembTestPulseData_H
 #define FembTestPulseData_H
 
+#include <vector>
+
 class FembTestPulseData {
 
 public:
 
   using Index = unsigned int;
+  using FloatVector = std::vector<float>;
 
   // Run data.
   Index femb;   // FEMB ID
@@ -32,11 +35,12 @@ public:
   float pede;   // ADC pedestal with pulses
 
   // Channel/Event/sign data
-  float cmea;   // Calibrated signal mean
-  float crms;   // Calibrated signal RMS;
-  float stk1;   // sticky 1
-  float stk2;   // sticky 1
-  int   nsat;   // # saturated pulses
+  float cmea;        // Calibrated signal mean
+  float crms;        // Calibrated signal RMS;
+  FloatVector cdev;  // Calibrated deiviations from truth
+  float stk1;        // sticky 1
+  float stk2;        // sticky 2
+  int   nsat;        // # saturated pulses
 
   // Pulse data
   std::vector<float> qcal;   // Measured charge with calibration.

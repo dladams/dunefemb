@@ -1,5 +1,5 @@
 {
-  int chan = 18;
+  int chan = 17;
   DataMap::dbg(1);
   FembTestAnalyzer ftc(121, chan, 2, 2);
   ftc.setTickPeriod(497);

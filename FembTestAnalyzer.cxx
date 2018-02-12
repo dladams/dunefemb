@@ -67,7 +67,7 @@ FembTestAnalyzer(opt, a_femb, fpat, a_isCold) {
 FembTestAnalyzer::FembTestAnalyzer(int opt, int a_femb, string a_tspat, bool a_isCold)
 : m_copt(CalibOption(opt%10)), m_ropt(RoiOption((opt%100)/10)), m_doDraw(opt>99),
   m_femb(a_femb), m_tspat(a_tspat), m_isCold(a_isCold),
-  m_ptreePulse(nullptr), m_ptreeTickMod(nullptr), m_tickPeriod(0),
+  m_ptreePulse(nullptr), m_tickPeriod(0),
   m_nChannelEventProcessed(0) {
   const string myname = "FembTestAnalyzer::ctor: ";
   cout << myname << "  Calib option: " << calibOptionName() << endl;
@@ -392,6 +392,7 @@ processChannelEvent(Index icha, Index ievt) {
   // This includes finding the tickmods with the min and max signals.
   if ( tickPeriod() > 0 ) {
     FembTestTickModTree& ftt = *tickModTree(false);
+    ftt.addTree(icha);
     ftt.clear();
     ftt.data().femb = femb();
     ftt.data().gain = gainIndex();
@@ -525,7 +526,7 @@ processChannelEvent(Index icha, Index ievt) {
       } else {
         // We don't expect these for tickmod ROIs.
         if ( ! doTickModRoi() ) {
-          cout << myname << "No " + ssgn + " area ROIs " + " for channel " << icha
+          cout << myname << "No " + ssgn + " area ROIs for channel " << icha
                << " event " << ievt << endl;
         }
       }
@@ -553,7 +554,7 @@ processChannelEvent(Index icha, Index ievt) {
         res.setFloat(meanName, ph->GetMean());
         res.setFloat(rmsName, ph->GetRMS());
       } else {
-        cout << myname << "No " + ssgn + " height ROIS " + " for channel " << icha
+        cout << myname << "No " + ssgn + " height ROIs for channel " << icha
              << " event " << ievt << endl;
       }
       // Build the deviation histogram. Record it and its mean and RMS.
@@ -1175,21 +1176,26 @@ const DataMap& FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn,
   vector<float> dyrese;
   double xlinMin = adcmin/gain;
   double xlinMax = adcmax/gain;
+  double difnSumSq = 0.0;
   for ( Index ipt=0; ipt<nptf; ++ipt ) {
     double xpt = xf[ipt];
     double ypt = yf[ipt];
+    //double yunc = dyf[ipt];
+    double yunc = dyFit[ipt];
     double yfit = pfit->Eval(xpt);
     double ydif = ypt - yfit;
+    double difn = ydif/yunc;
     xres.push_back(xpt);
     yres.push_back(ydif/gain);
-    dyres.push_back(dyf[ipt]/gain);
+    dyres.push_back(yunc/gain);
     //if ( fitAdcMin && (yfit <= 0.9999*adcfloor) ) continue;
     //if ( fitAdcMax && (yfit >= 0.9999*adcmax) ) continue;
     if ( xpt < xfmin ) continue;
     if ( xpt > xfmax ) continue;
+    difnSumSq += difn*difn;
     xrese.push_back(xpt);
     yrese.push_back(ydif/gain);
-    dyrese.push_back(dyf[ipt]/gain);
+    dyrese.push_back(yunc/gain);
   }
   string gnamr = gnam + "Res";
   TGraph* pgr = new TGraphErrors(xrese.size(), &xrese[0], &yrese[0], &dx[0], &dyrese[0]);
@@ -1236,6 +1242,11 @@ const DataMap& FembTestAnalyzer::getChannelResponse(Index icha, SignOption isgn,
   res.setGraph(gnamfFit, pgfFit);
   res.setGraph(gnamr, pgr);
   for ( TH1* ph : rmsHists ) res.setHist(ph->GetName(), ph, true);
+  double linFitChiSquare = difnSumSq;
+  int nlin = xrese.size() - 1;
+  double linFitChiSquareDof = nlin > 0.0 ? difnSumSq/nlin : 0.0;
+  res.setFloat("linFitChiSquare" + styp + signLabel, linFitChiSquare);
+  res.setFloat("linFitChiSquareDof" + styp + signLabel, linFitChiSquareDof);
   return res;
 }
 
@@ -1254,7 +1265,7 @@ DataMap FembTestAnalyzer::getChannelDeviations(Index icha) {
   res.setInt("channel", icha);
   string hylab = "# entries";
   string hnamDev = "hdev";
-  string httlDev = calibName(true) + " deviation channel " + scha + "; #DeltaQ [ke]; " + hylab;
+  string httlDev = calibName(true) + " deviation; #DeltaQ [ke]; " + hylab;
   string hnamAdv = "hadv";
   string httlAdv = "Signal |deviation| channel " + scha + "; #DeltaQ [ke]; " + hylab;
   TH1* phDev = new TH1F(hnamDev.c_str(), httlDev.c_str(), 200, -20, 20);
@@ -1401,7 +1412,7 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
   ostringstream ssfemb;
   ssfemb << femb();
   string sfemb = ssfemb.str();
-  string httl = "Pedestals for FEMB " + sfemb + "; Channel; Pedestal [ADC]";
+  string httl = "Pedestals; Channel; Pedestal [ADC]";
   TH1* php = new TH1F(hnam.c_str(), httl.c_str(), ncha, 0, ncha);
   for ( Index icha=0; icha<ncha; ++icha ) {
     const DataMap& resc = processChannel(icha);
@@ -1594,6 +1605,31 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
       }
       if ( pho != nullptr ) hists[hnam] = pho;
     }
+    // Fit chi-square distribution.
+    if ( true ) {
+      string sarea = "Height";
+      string spos = "";
+      string sposSpace = "";
+      string hnamCsdd = "hcsdDist" + sarea + spos;;
+      string httlCsdd = sarea + sposSpace + " linear fit quality; #chi^{2}/DOF; # channels";
+      TH1* phcsdd= new TH1F(hnamCsdd.c_str(), httlCsdd.c_str(), 40, 0, 20);
+      string hnamCsdc = "hcsdChan" + sarea + spos;
+      string httlCsdc = sarea + sposSpace + " linear fit quality; Channel; #chi^{2}/DOF";
+      TH1* phcsdc = new TH1F(hnamCsdc.c_str(), httlCsdc.c_str(), ncha, 0, ncha);
+      for ( TH1* ph : {phcsdd, phcsdc} ) {
+        ph->SetDirectory(0);
+        ph->SetLineWidth(2);
+        ph->SetStats(0);
+      }
+      for ( Index icha=0; icha<ncha; ++icha ) {
+        const DataMap& resch = processChannel(icha);
+        float csdh = resch.getFloat("linFitChiSquareDofHeight");
+        phcsdd->Fill(csdh);
+        phcsdc->SetBinContent(icha+1, csdh);
+      }
+      allResult.setHist(phcsdd);
+      allResult.setHist(phcsdc);
+    }
     // Signal deviation histograms.
     Index devChannelCount = 0;
     Index devBulkCount = 0;
@@ -1637,11 +1673,11 @@ const DataMap& FembTestAnalyzer::processAll(int a_tickPeriod) {
             ph->Reset();
           }
         }
-        string sttlDev = calibName(true) + " deviation for FEMB " + sfemb;
+        string sttlDev = calibName(true) + " deviation";
         phdev->SetTitle(sttlDev.c_str());
         phdev->Add(phdevCha);
         if ( doAbs ) {
-          string sttlAdv = calibName(true) + " deviation magnitude for FEMB " + sfemb;
+          string sttlAdv = calibName(true) + " deviation magnitude";
           phadv->SetTitle(sttlAdv.c_str());
           phadv->Add(phadvCha);
         }
@@ -1733,6 +1769,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree(bool useAll) {
       data.qcal = res.getFloatVector("roiSigCalNeg");
       data.cmea = res.getFloat("roiSigCalMeanNeg");
       data.crms = res.getFloat("roiSigCalRmsNeg");
+      data.cdev = res.getFloatVector("roiSigDevPos");
       m_ptreePulse->fill(data);
       data.qexp = 0.001*nele;
       data.sevt = ievt;
@@ -1742,6 +1779,7 @@ FembTestPulseTree* FembTestAnalyzer::pulseTree(bool useAll) {
       data.qcal = res.getFloatVector("roiSigCalPos");
       data.cmea = res.getFloat("roiSigCalMeanPos");
       data.crms = res.getFloat("roiSigCalRmsPos");
+      data.cdev = res.getFloatVector("roiSigDevPos");
       m_ptreePulse->fill(data);
     }
   }
@@ -1755,10 +1793,6 @@ FembTestTickModTree* FembTestAnalyzer::tickModTree(bool useAll) {
   const string myname = "FembTestAnalyzer::tickModTree: ";
   if ( m_ptreeTickMod != nullptr ) return m_ptreeTickMod.get();
   string caltyp = isCalib() ? "calib" : "raw";
-  //if ( ! isCalib() ) {
-  //  cout << myname << "Must have calibration for tickmod tree." << endl;
-  //  return nullptr;
-  //}
   if ( ! haveTools() ) {
     cout << myname << "ADC processing tools are missing." << endl;
     return nullptr;
@@ -1868,11 +1902,13 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
     cout << myname <<   "               draw(\"ped\") - Pedestal vs. channel" << endl;
     if ( doRoi() ) {
       cout << myname << "            draw(\"pedlim\") - Pedestal vs. channel with ADC ranges" << endl;
+      cout << myname << "             draw(\"csddh\") - Height chi-square/DOF distribution." << endl;
+      cout << myname << "             draw(\"csdch\") - Height chi-square/DOF vs. channel." << endl;
       cout << myname << "              draw(\"rmsh\") - Height deviations." << endl;
       cout << myname << "              draw(\"rmsa\") - Area deviations." << endl;
       cout << myname << "             draw(\"gainh\") - Height gains vs. channel" << endl;
       cout << myname << "             draw(\"gaina\") - Area gains vs. channel" << endl;
-      cout << myname << "               draw(\"dev\") - ADC calibration deviations" << endl;
+      cout << myname << "               draw(\"dev\") - ADC calibration deviations for the FEMB" << endl;
       cout << myname << "               draw(\"adv\") - ADC calibration deviation magnitudes" << endl;
       cout << myname << "        draw(\"resph\", ich) - ADC height vs. Qin for channel ich" << endl;
       cout << myname << "        draw(\"respa\", ich) - ADC area vs. Qin for channel ich" << endl;
@@ -1947,11 +1983,11 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       if ( isCalib() ) {
         hnam1 = "hchaCalibAdcMin";
         hnam2 = "hchaCalibAdcMax";
-        sttl = "ADC pedestals and calibration ranges for FEMB " + sfemb;
+        sttl = "ADC pedestals and calibration ranges";
       } else if ( doResponseFit() ) {
         hnam1 = "hchaFitAdcMin";
         hnam2 = "hchaFitAdcMax";
-        sttl = "ADC pedestals and fitted ranges for FEMB " + sfemb;
+        sttl = "ADC pedestals and fitted ranges";
       } else {
         cout << myname << "Plot " << sopt << " requires calibration or reponse fitting." << endl;
         return nullptr;
@@ -2021,7 +2057,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       } else if ( int rstat = man.add(ph, "H") ) {
         cout << myname << "Manipulator returned error " << rstat << endl;
       } else {
-        string sttl = "ADC " + sarea + " gains for FEMB " + sfemb;
+        string sttl = "ADC " + sarea + " gains";
         man.hist()->SetTitle(sttl.c_str());
         man.addVerticalModLines(16);
         double gnom = 1000.0*preampGain()*adcGain()/elecPerFc();  // Nominal gain [ADC/ke]
@@ -2035,7 +2071,25 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
         }
         return draw(&man);
       }
-    // Deviations.
+    // Chi-square/DOF
+    } else if ( sopt == "csddh" || sopt == "csdch" ) {
+      string hnam = "NoSuchCsdHist";
+      if ( sopt == "csddh" ) hnam = "hcsdDistHeight";
+      if ( sopt == "csdch" ) hnam = "hcsdChanHeight";
+      if ( ! processAll().haveHist(hnam) ) {
+        cout << myname << "Unable to find histogram " << hnam << endl;
+        return nullptr;
+      }
+      TH1* ph = processAll().getHist(hnam);
+      bool isDist = hnam.find("Dist") != string::npos;
+      man.add(ph);
+      if ( isDist ) {
+        man.showOverflow();
+      } else {
+        man.setRangeY(0, 20);
+        man.addVerticalModLines(16);
+      }
+      return draw(&man);
     } else if ( sopt == "rmsh" || sopt == "rmsa" ) {
       if ( ! doRoi() ) {
         cout << myname << "Plot " << sopt << " requires ROIs." << endl;
@@ -2085,7 +2139,7 @@ TPadManipulator* FembTestAnalyzer::draw(string sopt, int icha, int ievt) {
       // Set title.
       ostringstream ssttl;
       ssttl << (sopt == "rmsh" ? "Height" : "Area");
-      ssttl << " deviations for FEMB " << femb();
+      ssttl << " deviations";
       man.hist()->SetTitle(ssttl.str().c_str());
       return draw(&man);
     } else if ( sopt == "dev" || sopt == "adv" ) {
@@ -2373,6 +2427,7 @@ TPadManipulator* FembTestAnalyzer::drawAdc(string sopt, int iadc, int ievt) {
   ostringstream ssnam;
   if ( iadc < 0 || iadc > 7 ) return nullptr;
   ssnam << "adc" << iadc << "_" << sopt;
+  if ( ievt >= 0 ) ssnam << "_" << ievt;
   string mnam = ssnam.str();
   ManMap::iterator iman = m_mans.find(mnam);
   if ( iman != m_mans.end() ) return &iman->second;

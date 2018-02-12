@@ -18,6 +18,7 @@ public:
 
   using Index = DuneFembReader::Index;
   using ManMap = std::map<std::string, TPadManipulator>;
+  using TickModTreePtr = std::unique_ptr<FembTestTickModTree>;
 
   // Processing options.
   //      OptNoCalib - Signal is ADC - pedestal
@@ -208,7 +209,7 @@ private:
   std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
   ManMap m_mans;
   std::unique_ptr<FembTestPulseTree> m_ptreePulse;
-  std::unique_ptr<FembTestTickModTree> m_ptreeTickMod;
+  TickModTreePtr m_ptreeTickMod;
   Index m_tickPeriod;
   Index m_nChannelEventProcessed;
 

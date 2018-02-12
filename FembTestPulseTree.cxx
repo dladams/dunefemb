@@ -36,6 +36,7 @@ FembTestPulseTree::FembTestPulseTree(string fname, string sopt) {
     m_ptree->Branch("pede", &(m_data.pede));
     m_ptree->Branch("cmea", &(m_data.cmea), "cmea/F");
     m_ptree->Branch("crms", &(m_data.crms), "crms/F");
+    m_ptree->Branch("cdev", &(m_data.cdev));
     m_ptree->Branch("stk1", &(m_data.stk1), "stk1/F");
     m_ptree->Branch("stk2", &(m_data.stk2), "stk2/F");
     m_ptree->Branch("nsat", &(m_data.nsat));

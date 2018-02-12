@@ -70,9 +70,10 @@
   gROOT->ProcessLine(".L DuneFembFinder.cxx+");
   gROOT->ProcessLine(".L FembTestPulseTree.cxx+");
   gROOT->ProcessLine(".L FembTestTickModTree.cxx+");
-  gROOT->ProcessLine(".L FembTestTickModViewer.cxx+");
+  //gROOT->ProcessLine(".L FembTestTickModViewer.cxx+");
   gROOT->ProcessLine(".L FembTestAnalyzer.cxx+");
   gROOT->ProcessLine(".L FembDatasetAnalyzer.cxx+");
+  gROOT->ProcessLine(".L DuneFembReport.cxx+");
   gROOT->ProcessLine(".L draw.cxx+");
   gROOT->ProcessLine(".L drawall.C");
   cout << "Finished loading." << endl;

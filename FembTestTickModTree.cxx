@@ -11,13 +11,12 @@
 using std::string;
 using std::cout;
 using std::endl;
+using std::ostringstream;
 
 //**********************************************************************
 
 FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
-: m_pdata(nullptr) {
-  m_needWrite = false;
-  m_ptree = nullptr;
+: m_pdata(nullptr), m_ptreeWrite(nullptr), m_chanWrite(99999) {
   TDirectory* pdirSave = gDirectory;
   m_pfile = TFile::Open(fname.c_str(), sopt.c_str());
   // Stop Root from deleting file before we close.
@@ -25,19 +24,6 @@ FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
   if ( m_pfile != nullptr && ! m_pfile->IsOpen() ) {
     delete m_pfile;
     m_pfile = nullptr;
-  }
-  if ( file() != nullptr ) {
-    string tname = "FembTestTickMod";
-    TObject* pobj = file()->Get(tname.c_str());
-    if ( pobj != nullptr ) {
-      m_ptree = dynamic_cast<TTree*>(pobj);
-      m_ptree->SetBranchAddress("data", &m_pdata);
-      m_ptree->GetEntry(0);
-    } else {
-      file()->cd();
-      m_ptree = new TTree(tname.c_str(), "FEMB test pulses");
-      m_ptree->Branch("data", &m_data);
-    }
   }
   clear();
   if ( pdirSave != nullptr ) pdirSave->cd();
@@ -59,7 +45,10 @@ FembTestTickModTree::~FembTestTickModTree() {
       cout << myname << "WARNING: File closed before the complete tree was written." << endl;
     }
     m_pfile = nullptr;
-    m_ptree = nullptr;
+    m_ptreeWrite = nullptr;
+    m_chanWrite = 99999;
+    m_trees.clear();
+    m_needWrite = false;
     if ( pdirSave != nullptr ) pdirSave->cd();
   }
 }
@@ -97,8 +86,69 @@ void FembTestTickModTree::clear() {
 
 //**********************************************************************
 
+TTree* FembTestTickModTree::addTree(Index icha) {
+  if ( haveTree(icha) ) return nullptr;
+  if ( ! haveFile() ) return nullptr;
+  if ( m_trees.size() < icha+1 ) {
+    m_trees.resize(icha+1, nullptr);
+  }
+  m_ptreeWrite = nullptr;
+  m_chanWrite = 99999;
+  ostringstream sscha;
+  if ( icha < 100 ) sscha << "0";
+  if ( icha < 10 ) sscha << "0";
+  sscha << icha;
+  string tname = "TickModChan" + sscha.str();
+  TDirectory* pdirSave = gDirectory;
+  TObject* pobj = file()->Get(tname.c_str());
+  if ( pobj != nullptr ) return nullptr;
+  file()->cd();
+  TTree* ptree = new TTree(tname.c_str(), "FEMB test pulses");
+  ptree->Branch("data", &m_data);
+  clear();
+  m_trees[icha] = ptree;
+  m_needWrite = true;
+  if ( pdirSave != nullptr ) pdirSave->cd();
+  m_ptreeWrite = ptree;
+  m_chanWrite = icha;
+  return ptree;
+}
+
+//**********************************************************************
+
+TTree* FembTestTickModTree::getTree(Index icha) {
+  m_ptreeWrite = nullptr;
+  m_chanWrite = 99999;
+  if ( ! haveFile() ) return nullptr;
+  ostringstream sscha;
+  TTree* ptree = tree(icha);
+  TDirectory* pdirSave = gDirectory;
+  if ( ptree == nullptr ) {
+    if ( icha < 100 ) sscha << "0";
+    if ( icha < 10 ) sscha << "0";
+    sscha << icha;
+    string tname = "TickModChan" + sscha.str();
+    TObject* pobj = file()->Get(tname.c_str());
+    if ( pobj == nullptr ) return nullptr;
+    ptree = dynamic_cast<TTree*>(pobj);
+    if ( ptree == nullptr ) return nullptr;
+  }
+  ptree->SetBranchAddress("data", &m_pdata);
+  ptree->GetEntry(0);
+  if ( m_trees.size() < icha+1 ) {
+    m_trees.resize(icha+1, nullptr);
+  }
+  if ( m_trees[icha] == nullptr ) m_trees[icha] = ptree;
+  if ( pdirSave != nullptr ) pdirSave->cd();
+  return ptree;
+}
+
+//**********************************************************************
+
+// For now, we only fill the current tree.
+
 void FembTestTickModTree::fill(bool doClear) {
-  if ( tree() != nullptr ) tree()->Fill();
+  if ( treeWrite() != nullptr && chanWrite() == m_data.chan ) treeWrite()->Fill();
   if ( doClear ) clear();
   m_needWrite = true;
 }
@@ -212,12 +262,13 @@ void FembTestTickModTree::write() {
 //**********************************************************************
 
 const FembTestTickModData*
-FembTestTickModTree::read(unsigned int ient, bool copy) {
+FembTestTickModTree::read(Index icha, Index ient, bool copy) {
   const string myname = "FembTestTickModTree::data: ";
+  getTree(icha);
   //m_pdata = nullptr;
-  if ( haveTree() ) {
-    if ( ient < size() ) {
-      tree()->GetEntry(ient);
+  if ( haveTree(icha) ) {
+    if ( ient < size(icha) ) {
+      tree(icha)->GetEntry(ient);
       if ( copy ) m_data = *m_pdata;
     } else {
       cout << myname << "ERROR: Tree does not have entry " << ient << endl;
