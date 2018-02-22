@@ -5,6 +5,7 @@
 #include "TFile.h"
 #include "TROOT.h"
 #include "TDirectory.h"
+#include "TKey.h"
 #include "dune/DuneInterface/AdcChannelData.h"
 #include <iostream>
 
@@ -17,7 +18,9 @@ using std::ostringstream;
 
 FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
 : m_pdata(nullptr), m_ptreeWrite(nullptr), m_chanWrite(99999) {
+  const string myname = "FembTestTickModTree::ctor: ";
   TDirectory* pdirSave = gDirectory;
+  cout << myname << "Opening " << fname << " in mode " << sopt << endl;
   m_pfile = TFile::Open(fname.c_str(), sopt.c_str());
   // Stop Root from deleting file before we close.
   gROOT->GetListOfFiles()->Remove(m_pfile);
@@ -26,6 +29,37 @@ FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
     m_pfile = nullptr;
   }
   clear();
+  // Check for existing trees.
+  if ( file() != nullptr ) {
+    //TObjLink* plnk = file()->GetListOfKeys()->FirstLink();
+    TIter ikey(file()->GetListOfKeys());
+    string tnamePrefix = "TickModChan";
+    Index lenPrefix = tnamePrefix.size();
+    while ( true ) {
+      TKey* pkey = dynamic_cast<TKey*>(ikey());
+      if ( pkey == nullptr ) break;
+      TTree* ptree = dynamic_cast<TTree*>(pkey->ReadObj());
+      if ( ptree == nullptr ) continue;
+      pkey->Print();
+      string tname = ptree->GetName();
+      if ( tname.substr(0, lenPrefix) == tnamePrefix ) {
+        istringstream sscha(tname.substr(lenPrefix));
+        Index icha;
+        sscha >> icha;
+        cout << myname << "Found tree for channel " << icha << endl;
+      }
+      //ikey.Next();
+    }
+    //TKey* pkey = dynamic_cast<TKey*>(ikey());
+    //key->ReadObj()->Print();
+  }
+/*
+  ostringstream sscha;
+  if ( icha < 100 ) sscha << "0";
+  if ( icha < 10 ) sscha << "0";
+  sscha << icha;
+  string tname = "TickModChan" + sscha.str();
+*/  
   if ( pdirSave != nullptr ) pdirSave->cd();
 }
 
@@ -33,6 +67,7 @@ FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
 
 FembTestTickModTree::~FembTestTickModTree() {
   const string myname = "FembTestTickModTree::dtor: ";
+  cout << myname << endl;
   if ( file() != nullptr ) {
     TDirectory* pdirSave = gDirectory;
     if ( pdirSave == file() ) pdirSave = nullptr;
@@ -252,9 +287,14 @@ DataMap FembTestTickModTree::fill(AdcChannelData& acd) {
 //**********************************************************************
 
 void FembTestTickModTree::write() {
+  const string myname = "FembTestTickModTree::writing: ";
   TDirectory* pdirSave = gDirectory;
-  file()->Write();
+  cout << myname << "Before purge: " << endl;
+  file()->ls();
   file()->Purge();
+  cout << myname << "After purge: " << endl;
+  file()->ls();
+  file()->Write();
   if ( pdirSave != nullptr ) pdirSave->cd();
   m_needWrite = false;
 }
@@ -264,7 +304,7 @@ void FembTestTickModTree::write() {
 const FembTestTickModData*
 FembTestTickModTree::read(Index icha, Index ient, bool copy) {
   const string myname = "FembTestTickModTree::data: ";
-  getTree(icha);
+  //getTree(icha);       // This makes things a lot slower
   //m_pdata = nullptr;
   if ( haveTree(icha) ) {
     if ( ient < size(icha) ) {

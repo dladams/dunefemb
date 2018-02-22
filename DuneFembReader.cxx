@@ -10,8 +10,10 @@ using std::string;
 using std::cout;
 using std::endl;
 
-using Index = DuneFembReader::Index;
-using Entry = DuneFembReader::Entry;
+namespace {
+  using SIndex = DuneFembReader::Index;
+  using Entry = DuneFembReader::Entry;
+}
 
 //**********************************************************************
 
@@ -57,11 +59,11 @@ DuneFembReader::DuneFembReader(string fname, int a_run, int a_subrun, string a_l
   }
   if ( m_label.size() == 0 ) m_label = fname;
   cout << myname << "Fetching channel counts." << endl;
-  for ( Index ient=0; ient<m_ptree->GetEntries(); ++ient ) {
+  for ( SIndex ient=0; ient<m_ptree->GetEntries(); ++ient ) {
     read(ient);
-    Index ievt = event();
-    Index nevt = ievt + 1;
-    Index ncha = channel() + 1;
+    SIndex ievt = event();
+    SIndex nevt = ievt + 1;
+    SIndex ncha = channel() + 1;
     if ( nevt > m_nChanPerEvent.size() ) m_nChanPerEvent.resize(nevt, 0);
     if ( m_nChanPerEvent[ievt] <= ncha ) m_nChanPerEvent[ievt] = ncha;
     if ( ncha >  m_nChan ) m_nChan = ncha;
@@ -111,7 +113,7 @@ readWaveform(Entry ient, AdcChannelData* pacd) {
 //**********************************************************************
 
 Entry DuneFembReader::
-find(Index a_event, Index a_chan) {
+find(SIndex a_event, SIndex a_chan) {
   Entry nent = tree()->GetEntries();
   Entry ent0 = m_entry==badEntry() ? 0 : (m_entry)%nent;
   Entry ient = ent0;
@@ -133,7 +135,7 @@ find(Index a_event, Index a_chan) {
 //**********************************************************************
 
 int DuneFembReader::
-read(Index a_event, Index a_chan, AdcChannelData* pacd) {
+read(SIndex a_event, SIndex a_chan, AdcChannelData* pacd) {
   Entry ient = find(a_event, a_chan);
   return readWaveform(ient, pacd);
 }

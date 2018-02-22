@@ -9,6 +9,7 @@
 #define FembTestTickModViewer_H
 
 #include "FembTestTickModTree.h"
+#include "dunesupport/NestedContainer.h"
 #include "dune/DuneCommon/TPadManipulator.h"
 #include <memory>
 
@@ -20,21 +21,28 @@ public:
   using Index = unsigned int;
   using Name = std::string;
   using IndexVector = std::vector<Index>;
-  using SelMap = std::map<Name, IndexVector>;
+  using SelectionContainer = std::map<Index, IndexVector>;  // Index vectors indexed by channel
+  using Selection = NestedContainer<SelectionContainer>;
+  //using Selection = std::map<Index, IndexVector>;    // Index vectors indexed by channel
+  using SelMap = std::map<Name, Selection>;
   using NameMap = std::map<Name, Name>;
 
-  FembTestTickModViewer(FembTestTickModTree& a_tmt); 
-  FembTestTickModViewer(std::string fname); 
+  // Ctor fro tree and file holding tree.
+  // Tree data is read for channels [icha1, icha1+ncha).
+  FembTestTickModViewer(FembTestTickModTree& a_tmt, Index icha1 =0, Index ncha =1); 
+  FembTestTickModViewer(std::string fname, Index icha1 =0, Index ncha =1); 
 
   // Getters.
   FembTestTickModTree& tmt() { return m_tmt; }
   const FembTestTickModTree& tmt() const { return m_tmt; }
-  Index size() const { return tmt().size(); }
+
+  // Channels with trees.
+  const IndexVector& channels() const { return m_chans; }
   const FembTestTickModData* read(Index icha, Index ient) { return tmt().read(icha, ient); }
   const FembTestTickModData* read() { return tmt().read(); }
   bool doDraw() const { return m_doDraw; }
   Name label() const { return m_label; }
-  const IndexVector& selection(Name selname);
+  const Selection& selection(Name selname);
   Name selectionLabel(Name selname);
   double qmin() const { return -130.0; }
   double qmax() const { return  220.0; }
@@ -59,8 +67,9 @@ private:
   ManMap m_mans;
   bool m_doDraw =true;
   Name m_label;
-  SelMap m_sels;     // Selection vectors indexed by name
-  NameMap m_sellabs;  // Selection labels indexed by name
+  IndexVector m_chans;  // Channels with a tree.
+  SelMap m_sels;        // Selection vectors indexed by name
+  NameMap m_sellabs;    // Selection labels indexed by name
 
 };
 

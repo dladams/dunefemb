@@ -16,18 +16,24 @@ namespace {
 using Name = FembTestTickModViewer::Name;
 using Index = FembTestTickModViewer::Index;
 using IndexVector = FembTestTickModViewer::IndexVector;
+using Selection = FembTestTickModViewer::Selection;
 }
 
 //**********************************************************************
 
 FembTestTickModViewer::
-FembTestTickModViewer(FembTestTickModTree& a_tmt)
-: m_tmt(a_tmt) { }
+FembTestTickModViewer(FembTestTickModTree& a_tmt, Index icha1, Index ncha)
+: m_tmt(a_tmt) {
+  for ( Index icha=icha1; icha<icha1+ncha; ++icha ) tmt().getTree(icha);
+  for ( Index icha=0; icha<tmt().size(); ++icha ) {
+    if ( tmt().haveTree(icha) ) m_chans.push_back(icha);
+  }
+}
 
 //**********************************************************************
 
 FembTestTickModViewer::
-FembTestTickModViewer(string fname)
+FembTestTickModViewer(string fname, Index icha1, Index ncha)
 : m_ptmtOwned(new FembTestTickModTree(fname, "READ")),
   m_tmt(*m_ptmtOwned) {
   string lab = fname;
@@ -35,13 +41,16 @@ FembTestTickModViewer(string fname)
   Index len = lab.size();
   if ( lab.substr(len-5) == ".root" ) lab = lab.substr(0, len-5);
   m_label = lab;
+  for ( Index icha=icha1; icha<icha1+ncha; ++icha ) tmt().getTree(icha);
+  for ( Index icha=0; icha<tmt().size(); ++icha ) {
+    if ( tmt().haveTree(icha) ) m_chans.push_back(icha);
+  }
 }
 
 //**********************************************************************
 
-const IndexVector& FembTestTickModViewer::selection(Name selname) {
+const Selection& FembTestTickModViewer::selection(Name selname) {
   const string myname = "FembTestTickModViewer::sel: ";
-  Index nent = size();
   SelMap::const_iterator ient = m_sels.find(selname);
   // Return the selection if it already exists.
   if ( ient != m_sels.end() ) return ient->second;
@@ -52,9 +61,22 @@ const IndexVector& FembTestTickModViewer::selection(Name selname) {
   }
   if ( selname == "all" ) {
     m_sellabs[selname] = "";
-    IndexVector& sel = m_sels.emplace(selname, IndexVector(size())).first->second;
-    for ( Index ient=0; ient<nent; ++ient ) sel[ient] = ient;
-    return sel;
+    auto sstat = m_sels.emplace(selname, Selection());
+    if ( sstat.second ) {
+      auto itsel = sstat.first;
+      for ( Index icha : channels() ) {
+        Index nidx = tmt().size(icha);
+        Selection& sel = itsel->second;
+        if ( sel.container().find(icha) != sel.container().end() ) {
+          cout << myname << "Duplicate channel " << icha << " in selection all!" << endl;
+        } else {
+          Selection::C2& idxs = itsel->second.container()[icha];
+          idxs.resize(nidx);
+          for ( Index iidx=0; iidx<idxs.size(); ++iidx ) idxs[iidx] = iidx;
+        }
+      }
+    }
+    return m_sels[selname];
   }
   // Otherwise, build this selection.
   // if this is a combined selection, split into base and last subselection.
@@ -71,76 +93,62 @@ const IndexVector& FembTestTickModViewer::selection(Name selname) {
     remname  = selname.substr(ipos + 1);
     baseLabel = selectionLabel(basename);
   }
-  const IndexVector& selbase = selection(basename);
+  const Selection& selbase = selection(basename);
   string remLabel;
   float sigThresh = 5.0;
   if ( remname.substr(0,4) == "chan" ) {
-    // If any channel selection is requested, construct all channel selections.
-    // First make the prefix for all selection names.
-    string selprefix;
-    if ( basename != "all" ) selprefix = basename + "_";
-    selprefix += "chan";
-    // If channel selections for this base are already present and this is not in
-    // that set, it has invalid format.
-    if ( m_sels.find(selprefix + "000") != m_sels.end() ) {
-      cout << myname << "ERROR: Invalid format for channel selection: " << remname << endl;
-      return m_sels["empty"];
+    Selection& sel = m_sels[selname];
+    const Index badidx = 99999999;
+    Index icha = badidx;
+    istringstream sscha(remname.substr(4));
+    sscha >> icha;
+    if ( icha != badidx ) {
+      const Selection::C1& selmap = selbase.container();
+      const Selection::C1::const_iterator ient = selmap.find(icha);
+      if ( ient != selmap.end() ) sel.container()[icha] = ient->second;
+      ostringstream sslab;
+      sslab << "channel " << icha;
+      remLabel = sslab.str();
     }
-    // First make selection names for all channels and
-    // a selection list and label for each name.
-    vector<vector<string>> chselnames(128);
-    for ( Index icha=0; icha<128; ++icha ) {
-      ostringstream sscha;
-      sscha << icha;
-      string scha = sscha.str();
-      chselnames[icha].push_back(selprefix + scha);
-      if ( icha < 100 ) chselnames[icha].push_back(selprefix + "0" + scha);
-      if ( icha <  10 ) chselnames[icha].push_back(selprefix + "00" + scha);
-      string slab = baseLabel;
-      if ( slab.size() ) slab += " ";
-      slab += "channel " + scha;
-      for ( string chselname : chselnames[icha] ) {
-        m_sellabs[chselname] = slab;
-      }
-    }
-    // Loop over events and add them to the appropriate selection vectors.
-    for ( Index ient : selbase ) {
-      Index icha = read(ient)->chan;
-      for ( string chselname : chselnames[icha] ) {
-        m_sels[chselname].push_back(ient);
-      }
-    }
-    // Return the requested selection.
-    return selection(selname);
   } else if ( remname.substr(0,3) == "adc" ) {
     string sadc = remname.substr(3);
     while ( sadc.size() > 1 && sadc[0] == '0' ) sadc=sadc.substr(1);
+    Selection& sel = m_sels[selname];
     istringstream ssadc(sadc);
     Index iadc;
     ssadc >> iadc;
-    IndexVector& sel = m_sels[selname];
-    for ( Index ient : selbase ) {
-      if ( read(ient)->chan/16 == iadc ) sel.push_back(ient);
+    Index icha1 = 16*iadc;
+    Index icha2 = icha1 + 16;
+    const Selection::C1& selmap = selbase.container();
+    for ( Index icha=icha1; icha<icha2; ++icha ) {
+      const Selection::C1::const_iterator ient = selmap.find(icha);
+      if ( ient != selmap.end() ) sel.container()[icha] = ient->second;
     }
     ostringstream sslab;
     sslab << "ADC " << iadc;
     remLabel = sslab.str();
-  } else if ( remname == "nosat" ) {
-    IndexVector& sel = m_sels[selname];
-    for ( Index ient : selbase ) {
-      if ( read(ient)->nsat == 0 ) sel.push_back(ient);
+  } else if ( remname.substr(0,5) == "nosat" ) {
+    Selection& sel = m_sels[selname];
+    for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      if ( tmt().read(icha, iidx)->nsat == 0 ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
   } else if ( remname == "pedestal" ) {
-    IndexVector& sel = m_sels[selname];
-    for ( Index ient : selbase ) {
-      if ( fabs(read(ient)->cmea) <= sigThresh ) sel.push_back(ient);
+    Selection& sel = m_sels[selname];
+    for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      if ( fabs(tmt().read(icha, iidx)->cmea) <= sigThresh ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
   } else if ( remname == "signal" ) {
-    IndexVector& sel = m_sels[selname];
-    for ( Index ient : selbase ) {
-      if ( fabs(read(ient)->cmea) > sigThresh ) sel.push_back(ient);
+    Selection& sel = m_sels[selname];
+    for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      if ( fabs(tmt().read(icha, iidx)->cmea) > sigThresh ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
   } else {
@@ -187,11 +195,12 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
     return nullptr;
   }
-  if ( size() == 0 ) {
-    cout << myname << "ERROR: Tree has no entries." << endl;
+  Index ncha = channels().size();
+  if ( ncha == 0 ) {
+    cout << myname << "ERROR: There are no channel trees." << endl;
     return nullptr;
   }
-  const IndexVector sel = selection(selname);
+  const Selection& sel = selection(selname);
   if ( sel.size() == 0 ) {
     cout << myname << "WARNING: No entries found for selection \""
          << selname << "\"." << endl;
@@ -199,7 +208,6 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
   string mnam = sopt + "_" + selname;
   ManMap::iterator iman = m_mans.find(mnam);
   if ( iman != m_mans.end() ) return &iman->second;
-  Index nent = size();
   // Create a new pad manipulator.
   TPadManipulator& man = m_mans[mnam];
   // Create and add sample label.
@@ -212,12 +220,30 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
   man.addAxis();
   // Create suffix for the plot title.
   ostringstream ssttlsuf;
-  ssttlsuf << "FEMB " << read(0)->femb;
+  Selection::const_iterator isel = sel.begin();
+  Index icha0 = isel.key1();
+  ssttlsuf << "FEMB " << read(icha0,0)->femb;    // We are guaranteed 1st selection vector is not empty.
   string sellab = selectionLabel(selname);
   if ( sellab.size() ) ssttlsuf << " " << sellab;
   string ttlsuf = ssttlsuf.str();
+  const SelectionContainer& selcon = sel.container();  // STL map
   // Create and add plot to the manipulator.
-  if ( sopt == "q" || sopt == "qw" ) {
+  if ( sopt == "chan" ) {
+    int nbin = 128;
+    double xmin = 0.0;
+    double xmax = nbin;
+    string ttl = "Channel occupancy " + ttlsuf + "; Channel; # entries [/channel]";
+    TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
+    ph->SetStats(0);
+    ph->SetLineWidth(2);
+    ph->SetMinimum(0.0);
+    for ( const SelectionContainer::value_type selval : selcon ) {
+      ph->Fill(selval.first, selval.second.size());
+    }
+    man.add(ph, "hist");
+    man.addVerticalModLines(16);
+    return &man;
+  } else if ( sopt == "q" || sopt == "qw" ) {
     double xmin = qmin();
     double xmax = qmax();
     int nbin = xmax - xmin + 0.1;
@@ -233,8 +259,10 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
-      ph->Fill(read(ient)->cmea, read(ient)->qcal.size());
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      ph->Fill(read(icha, iidx)->cmea, read(icha, iidx)->qcal.size());
     }
     man.add(ph, "hist");
     man.setLogRangeY(0.5, 1.e6);
@@ -258,8 +286,10 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
-      for ( short iadc : read(ient)->radc ) ph->Fill(iadc);
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      for ( short iadc : read(icha, iidx)->radc ) ph->Fill(iadc);
     }
     man.add(ph, "hist");
     man.setLogRangeY(0.5, 1.e6);
@@ -276,8 +306,10 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
-      float cmea = read(ient)->cmea;
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      float cmea = read(icha, iidx)->cmea;
       for ( float qcal : read()->qcal ) {
         ph->Fill(qcal - cmea);
       }
@@ -295,8 +327,10 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
-      ph->Fill(read(ient)->crms);
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      ph->Fill(read(icha, iidx)->crms);
     }
     man.add(ph);
     man.showUnderflow();
@@ -313,10 +347,12 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
       float frac = -1.0;
-      if ( sopt == "sfmx" ) frac = read(ient)->sfmx;
-      if ( sopt == "sf63" ) frac = read(ient)->sf63;
+      if ( sopt == "sfmx" ) frac = read(icha, iidx)->sfmx;
+      if ( sopt == "sf63" ) frac = read(icha, iidx)->sf63;
       if ( frac == 1.0 ) frac = 0.9999;
       ph->Fill(frac);
     }
@@ -332,8 +368,10 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
-    for ( Index ient : sel ) {
-      for ( Index adc : read(ient)->radc ) {
+    for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      for ( Index adc : read(icha, iidx)->radc ) {
         ph->Fill(adc%64);
       }
     }
@@ -360,6 +398,11 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     pleg->AddEntry(ph00new, "ADC%64 == 0", "l");
     pleg->AddEntry(ph01new, "ADC%64 == 1", "l");
     man.setRangeY(0,1);
+    man.addVerticalModLines(16);
+    string ttl = pad("fmod63ch", selname)->getTitle();
+    string::size_type ipos = ttl.find("mod63 fraction");
+    ttl.replace(ipos, 14, "mod fractions");
+    man.setTitle(ttl);
     return &man;
   // fmod00, fmod01, fmod64 for dists
   // Plus suffix "ch" for vs. channel.
@@ -423,6 +466,9 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
       }
     }
     man.add(ph, sopt);
+cout << "Title1: " << ph->GetTitle() << endl;
+cout << "Title2: " << man.hist()->GetTitle() << endl;
+cout << "Title3: " << man.getTitle() << endl;
     return &man;
   }
   cout << myname << "Invalid plot name: " << sopt << endl;
