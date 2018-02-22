@@ -94,9 +94,13 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
     baseLabel = selectionLabel(basename);
   }
   const Selection& selbase = selection(basename);
-  string remLabel;
+  string badLabel = "SelectionNotFound";
+  string remLabel = badLabel;;
   float sigThresh = 5.0;
-  if ( remname.substr(0,4) == "chan" ) {
+  if ( remname.substr(0,3) == "all" ) {
+    m_sels[selname] = selbase;
+    remLabel = "";
+  } else if ( remname.substr(0,4) == "chan" ) {
     Selection& sel = m_sels[selname];
     const Index badidx = 99999999;
     Index icha = badidx;
@@ -160,13 +164,13 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
     cout << myname << "ERROR: selection was not inserted for " << selname << endl;
     return selection("empty");
   }
-  if ( remLabel.size() == 0 ) {
+  if ( remLabel == badLabel ) {
     cout << myname << "ERROR: selection label was not created for subselection " << remname << endl;
     return selection("empty");
   }
   // Record a label for this selection: "baseLabel remLabel";
   string slab = baseLabel;
-  if (  slab.size() ) slab += " ";
+  if ( slab.size() && remLabel.size() ) slab += " ";
   slab += remLabel;
   m_sellabs[selname] = slab;
   return m_sels[selname];
