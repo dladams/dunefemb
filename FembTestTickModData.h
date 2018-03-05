@@ -27,9 +27,9 @@ public:
 
   // Event data
   float qexp;   // Expected charge for the signal peak (not the tickmod) [ke]
-  int   ievt;   // Event index.
-  int   itmx;   // Tickmod with maximum mean charge
-  int   itmn;   // Tickmod with minimum mean charge
+  Index ievt;   // Event index.
+  Index itmx;   // Tickmod with maximum mean charge
+  Index itmn;   // Tickmod with minimum mean charge
   float effq;   // Fraction of cmea>5 samples within 2.5 ke of cmea.
   float effp;   // Fraction of cmea<=5 samples within 2.5 ke of cmea.
 

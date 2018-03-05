@@ -5,6 +5,8 @@
 #include <sstream>
 #include "TH1F.h"
 #include "TLegend.h"
+#include "TROOT.h"
+#include "dune/DuneCommon/LineColors.h"
 
 using std::string;
 using std::cout;
@@ -49,6 +51,46 @@ FembTestTickModViewer(string fname, Index icha1, Index ncha)
 
 //**********************************************************************
 
+void FembTestTickModViewer::help() const {
+  cout << endl;
+  cout << "FembTestTickModViewer provides standard selections and plots for viewing\n"
+       << "tickmod trees. A plot may be displayed with viewer tmv using the syntax:\n"
+       << "\n"
+       << "  tmv.draw(myfig, mysel);\n"
+       << "\n"
+       << "where myfig is any of the following:\n"
+       << "\n"
+       << "  adc - ADC illumination with bin size of 64 ADC units\n"
+       << "  adcw - ADC illumination with bin size of 8 ADC units\n"
+       << "  qcal - Calibrated charge illumination with bin size of 10 ke (tickmod mean charge)\n"
+       << "  qcalw - Calibrated charge illumination with bin size of 1 ke (tickmod mean charge)\n"
+       << "  qexp - Peak charge illumination with bin size of 10 ke (pulse input charge)\n"
+       << "  qexpw - Peak charge illumination with bin size of 1 ke (pulse input charge)\n"
+       << "  qres - Charge residual (calibrated - mean)\n"
+       << "  mod64 - ADC LSB (ADC%64) for each sample\n"
+       << "  sfmx - Fraction of samples in peak of ADC LSB for each tickmod\n"
+       << "  sf63 - Fraction of samples with ADC LSB = 63 for each tickmod\n"
+       << "\n"
+       << "The selection string mysel is any combination of the following separated\n"
+       << "with underscores:\n"
+       << "\n"
+       << "  chanXXX - only channel XXX\n"
+       << "     adcX - only ADC X\n"
+       << "     evtX - only event (subrun) X\n"
+       << "    nosat - exclude tickmods with any saturated ADC samples\n"
+       << "      ped - pedestal region: |qcal| < " << pedLimit << " ke\n"
+       << "      sig - signal region: |qcal| >= " << pedLimit << " ke\n"
+       << "      mip - MIP region: " << pedLimit << " <= |qcal| <= " << mipLimit << " ke\n"
+       << "      hvy - Heavy ionization region: |qcal| >= " << mipLimit << "50 ke\n"
+       << "\n"
+       << "The call to draw returns a TPadManipulator pointer.\n"
+       << "It may be replaced with a call to pad to return the pointer without updating\n"
+       << "the screen or with a call to hist to return the primary histogram."
+       << endl;
+}
+
+//**********************************************************************
+
 const Selection& FembTestTickModViewer::selection(Name selname) {
   const string myname = "FembTestTickModViewer::sel: ";
   SelMap::const_iterator ient = m_sels.find(selname);
@@ -57,10 +99,12 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
   // Handle special selections all and empty.
   if ( selname == "empty" ) {
     m_sellabs[selname] = "empty";
+    m_selcols[selname] = LineColors::blue();
     return m_sels[selname];
   }
   if ( selname == "all" ) {
     m_sellabs[selname] = "";
+    m_selcols[selname] = LineColors::blue();
     auto sstat = m_sels.emplace(selname, Selection());
     if ( sstat.second ) {
       auto itsel = sstat.first;
@@ -96,7 +140,7 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
   const Selection& selbase = selection(basename);
   string badLabel = "SelectionNotFound";
   string remLabel = badLabel;;
-  float sigThresh = 5.0;
+  Index selcol = m_selcols[basename];
   if ( remname.substr(0,3) == "all" ) {
     m_sels[selname] = selbase;
     remLabel = "";
@@ -131,6 +175,22 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
     ostringstream sslab;
     sslab << "ADC " << iadc;
     remLabel = sslab.str();
+  } else if ( remname.substr(0,3) == "evt" ) {
+    Selection& sel = m_sels[selname];
+    const Index badevt = 99999999;
+    Index ievt = badevt;
+    istringstream ssevt(remname.substr(3));
+    ssevt >> ievt;
+    if ( ievt != badevt ) {
+      for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+        Index icha = isel.key1();
+        Index iidx = isel.value();
+        if ( tmt().read(icha, iidx)->ievt == ievt ) sel.container()[icha].push_back(iidx);
+      }
+      ostringstream sslab;
+      sslab << "event " << ievt;
+      remLabel = sslab.str();
+    }
   } else if ( remname.substr(0,5) == "nosat" ) {
     Selection& sel = m_sels[selname];
     for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
@@ -139,22 +199,43 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
       if ( tmt().read(icha, iidx)->nsat == 0 ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
-  } else if ( remname == "pedestal" ) {
+  } else if ( remname == "ped" ) {
     Selection& sel = m_sels[selname];
     for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
-      if ( fabs(tmt().read(icha, iidx)->cmea) <= sigThresh ) sel.container()[icha].push_back(iidx);
+      if ( fabs(tmt().read(icha, iidx)->cmea) < pedLimit ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
-  } else if ( remname == "signal" ) {
+    selcol = LineColors::brown();
+  } else if ( remname == "sig" ) {
     Selection& sel = m_sels[selname];
     for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
-      if ( fabs(tmt().read(icha, iidx)->cmea) > sigThresh ) sel.container()[icha].push_back(iidx);
+      if ( fabs(tmt().read(icha, iidx)->cmea) >= pedLimit ) sel.container()[icha].push_back(iidx);
     }
     remLabel = remname;
+    selcol = LineColors::violet();
+  } else if ( remname == "mip" ) {
+    Selection& sel = m_sels[selname];
+    for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      float aq = fabs(tmt().read(icha, iidx)->cmea);
+      if ( aq >= pedLimit && aq < mipLimit) sel.container()[icha].push_back(iidx);
+    }
+    remLabel = remname;
+    selcol = LineColors::green();
+  } else if ( remname == "hvy" ) {
+    Selection& sel = m_sels[selname];
+    for ( Selection::const_iterator isel=selbase.begin(); isel!=selbase.end(); ++isel ) {
+      Index icha = isel.key1();
+      Index iidx = isel.value();
+      if ( fabs(tmt().read(icha, iidx)->cmea) >= mipLimit ) sel.container()[icha].push_back(iidx);
+    }
+    remLabel = remname;
+    selcol = LineColors::red();
   } else {
     cout << myname << "Invalid selection word: " << remname << endl;
     return selection("empty");
@@ -173,6 +254,7 @@ const Selection& FembTestTickModViewer::selection(Name selname) {
   if ( slab.size() && remLabel.size() ) slab += " ";
   slab += remLabel;
   m_sellabs[selname] = slab;
+  m_selcols[selname] = selcol;
   return m_sels[selname];
 }
 
@@ -185,18 +267,10 @@ Name FembTestTickModViewer::selectionLabel(Name selname) {
 
 //**********************************************************************
 
-TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
+TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname, Name selovls) {
   const string myname = "FembTestTickModViewer::pad: ";
   if ( sopt == "" ) {
-    cout << myname << "     draw(\"q\") - Charge illumination" << endl;
-    cout << myname << "    draw(\"qw\") - Charge illumination (wide)" << endl;
-    cout << myname << "   draw(\"adc\") - ADC illumination" << endl;
-    cout << myname << "  draw(\"adcw\") - ADC illumination (wide)" << endl;
-    cout << myname << "  draw(\"qres\") - Charge residual" << endl;
-    cout << myname << "  draw(\"qrms\") - Charge RMS" << endl;
-    cout << myname << "  draw(\"sfmx\") - Bin peak stuck code fraction" << endl;
-    cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
-    cout << myname << "  draw(\"sf63\") - Mod63 stuck code fraction" << endl;
+    help();
     return nullptr;
   }
   Index ncha = channels().size();
@@ -204,16 +278,57 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     cout << myname << "ERROR: There are no channel trees." << endl;
     return nullptr;
   }
+  // If manipulator already exists, return it.
+  string mnam = sopt + "_" + selname;
+  if ( selovls.size() ) mnam += "-" + selovls;
+  ManMap::iterator iman = m_mans.find(mnam);
+  if ( iman != m_mans.end() ) return &iman->second;
+  // Create a new pad manipulator.
+  TPadManipulator& man = m_mans[mnam];
+  // Handle multiple selections.
+  if ( selovls.size() ) {
+    string::size_type ipos = 0;
+    string::size_type jpos = 0;
+    vector<string> ovlsels;
+    while ( ipos != string::npos && ipos<selovls.size() ) {
+      jpos = selovls.find(":", ipos);
+      if ( jpos == string::npos ) jpos = selovls.size();
+      string selovl = selovls.substr(ipos, jpos-ipos);
+      ovlsels.push_back(selovl);
+      ipos = jpos == string::npos ? string::npos : jpos+1;
+    }
+    bool first = true;
+    int newSty = 1;
+    int newWid = 2;
+    for ( string selovl : ovlsels ) {
+      string fulsel = selname + "_" + selovl;
+      if ( first ) {
+        const TPadManipulator* ppad = pad(sopt, fulsel);
+        if ( ppad == nullptr ) {
+          cout << myname << "Unable to find base manipulator for selection " << fulsel << endl;
+          return nullptr;
+        }
+        man = *ppad;
+        first = false;
+        // Use the title with no extra selection.
+        const TPadManipulator* ppadt = pad(sopt, selname);
+        man.setTitle(ppadt->getTitle());
+      } else {
+        man.add(hist(sopt, fulsel), "same hist");
+        TH1* ph = dynamic_cast<TH1*>(man.objects().back().get());
+        if ( ph != nullptr ) {
+          ph->SetLineStyle(++newSty);
+          ph->SetLineWidth(++newWid);
+        }
+      }
+    }
+    return &man;
+  }  
   const Selection& sel = selection(selname);
   if ( sel.size() == 0 ) {
     cout << myname << "WARNING: No entries found for selection \""
          << selname << "\"." << endl;
   }
-  string mnam = sopt + "_" + selname;
-  ManMap::iterator iman = m_mans.find(mnam);
-  if ( iman != m_mans.end() ) return &iman->second;
-  // Create a new pad manipulator.
-  TPadManipulator& man = m_mans[mnam];
   // Create and add sample label.
   TLatex* plab = new TLatex(0.01, 0.015, label().c_str());
   plab->SetNDC();
@@ -232,6 +347,7 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
   string ttlsuf = ssttlsuf.str();
   const SelectionContainer& selcon = sel.container();  // STL map
   // Create and add plot to the manipulator.
+  Index selcol = m_selcols[selname];
   if ( sopt == "chan" ) {
     int nbin = 128;
     double xmin = 0.0;
@@ -241,32 +357,39 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     ph->SetStats(0);
     ph->SetLineWidth(2);
     ph->SetMinimum(0.0);
+    ph->SetLineColor(selcol);
     for ( const SelectionContainer::value_type selval : selcon ) {
       ph->Fill(selval.first, selval.second.size());
     }
     man.add(ph, "hist");
     man.addVerticalModLines(16);
     return &man;
-  } else if ( sopt == "q" || sopt == "qw" ) {
+  } else if ( sopt == "qcal" || sopt == "qcalw" || sopt == "qexp" || sopt == "qexpw" ) {
     double xmin = qmin();
     double xmax = qmax();
     int nbin = xmax - xmin + 0.1;
     string syunit;
-    if ( sopt == "qw" ) {
+    bool usecal = sopt == "qcal" || sopt == "qcalw";
+    bool usew = sopt == "qcalw" || sopt == "qexpw";
+    if ( usew ) {
       man.setCanvasSize(1400, 500);
       syunit = "/ke";
     } else {
       nbin = nbin/10;
       syunit = "/(10 ke)";
     }
-    string ttl = "Charge illumination " + ttlsuf + "; Q [ke]; # samples [" + syunit + "]";
+    string ttl = usecal ? "Calibrated" : "Expected peak";
+    string sq = usecal ? "<Q>_{tm}" : "Q_{exp}";
+    ttl += " charge illumination " + ttlsuf + "; " + sq + " [ke]; # samples [" + syunit + "]";
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
-      ph->Fill(read(icha, iidx)->cmea, read(icha, iidx)->qcal.size());
+      if ( usecal ) ph->Fill(read(icha, iidx)->cmea, read(icha, iidx)->qcal.size());
+      else ph->Fill(read(icha, iidx)->qexp, read(icha, iidx)->qcal.size());
     }
     man.add(ph, "hist");
     man.setLogRangeY(0.5, 1.e6);
@@ -290,6 +413,7 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
@@ -310,6 +434,7 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
@@ -322,49 +447,70 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     man.showUnderflow();
     man.showOverflow();
     return &man;
-  } else if ( sopt == "qrms" ) {
+  } else if ( sopt == "qrms" || sopt == "qrmsn" ) {
     double xmin =  0.0;
     double xmax =  5.0;
     int nbin = 50;
     string syunit = "(0.1 ke)";
-    string ttl = "Local charge RMS " + ttlsuf + "; RMS(Q - <Q>) [ke]; # ticksets" + syunit + "]";
+    string sytype = sopt == "qrmsn" ? "Fraction of" : "#";
+    string ttl = "Local charge RMS " + ttlsuf + "; RMS(Q - <Q>) [ke]; " + sytype + " ticksets [/" + syunit + "]";
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
       ph->Fill(read(icha, iidx)->crms);
     }
-    man.add(ph);
+    ph->SetMinimum(0.0);
+    if ( sopt == "qrmsn" ) {
+      if( sel.size() ) ph->Scale(1.0/sel.size());
+      ph->SetMaximum(0.5);
+    }
+    man.add(ph, "hist");
     man.showUnderflow();
     man.showOverflow();
+    //man.addVerticalModLines(1.0);
+    man.addVerticalLine(0.3, 1.0, 3);
+    man.addVerticalLine(1.0, 1.0, 3);
     return &man;
-  } else if ( sopt == "sfmx" || sopt == "sf63" ) {
+  } else if ( sopt == "sfmx" || sopt == "sfmxn" || sopt == "sf63" || sopt == "sf63n" ) {
     double xmin =  0.0;
     double xmax =  1.0;
     int nbin = 40;
+    bool isfrac = sopt == "sfmxn" || sopt == "sf63n";
+    bool is63 = sopt == "sf63" || sopt == "sf63n";
     string ttl;
-    if ( sopt == "sfmx" ) ttl = "Peak";
-    else ttl = "Mod63";
-    ttl += " ADC bin fraction " + ttlsuf + "; Fraction; # ticksets";
+    if ( is63 ) ttl = "Mod63";
+    else ttl = "Peak";
+    string sytype = isfrac ? "Fraction of" : "#";
+    ttl += " ADC bin fraction " + ttlsuf + "; Fraction; " + sytype + " ticksets";
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
       float frac = -1.0;
-      if ( sopt == "sfmx" ) frac = read(icha, iidx)->sfmx;
-      if ( sopt == "sf63" ) frac = read(icha, iidx)->sf63;
+      if ( is63 ) frac = read(icha, iidx)->sf63;
+      else frac = read(icha, iidx)->sfmx;
       if ( frac == 1.0 ) frac = 0.9999;
       ph->Fill(frac);
     }
-    man.add(ph);
+    if ( isfrac ) {
+      if ( sel.size() ) ph->Scale(1.0/sel.size());
+      ph->SetMinimum(0.0);
+      ph->SetMaximum(0.3);
+    }
+    man.add(ph, "hist");
     man.showUnderflow();
     man.showOverflow();
+    man.addVerticalLine(0.30, 1.0, 3);
+    if ( ! is63 ) man.addVerticalLine(0.10, 1.0, 3);
     return &man;
-  } else if ( sopt == "mod64") {
+  } else if ( sopt == "mod64" || sopt == "mod64n" ) {
     double xmin =  0.0;
     double xmax = 64.0;
     int nbin = 64;
@@ -372,6 +518,8 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     TH1* ph = new TH1F(mnam.c_str(), ttl.c_str(), nbin, xmin, xmax);
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
+    ph->SetMinimum(0.0);
     for ( Selection::const_iterator isel=sel.begin(); isel!=sel.end(); ++isel ) {
       Index icha = isel.key1();
       Index iidx = isel.value();
@@ -379,9 +527,18 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
         ph->Fill(adc%64);
       }
     }
-    man.add(ph);
+    double yexp = 1.0/64;
+    double nent = ph->GetEntries();
+    if ( sopt == "mod64n" ) {
+      if ( nent > 0.0 ) ph->Scale(1.0/nent);
+      ph->SetMaximum(0.3);
+    } else {
+      yexp *= nent;
+    }
+    man.add(ph, "hist");
     man.showUnderflow();
     man.showOverflow();
+    man.addHorizontalLine(yexp, 1.0, 2);
     return &man;
   } else if ( sopt == "fmodsch" ) {
     TH1* ph63 = hist("fmod63ch", selname);
@@ -448,6 +605,7 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
     }
     ph->SetStats(0);
     ph->SetLineWidth(2);
+    ph->SetLineColor(selcol);
     for ( Index icha=0; icha<ncha; ++icha ) {
       ostringstream ssout;
       ssout << "chan";
@@ -470,9 +628,6 @@ TPadManipulator* FembTestTickModViewer::pad(string sopt, Name selname) {
       }
     }
     man.add(ph, sopt);
-cout << "Title1: " << ph->GetTitle() << endl;
-cout << "Title2: " << man.hist()->GetTitle() << endl;
-cout << "Title3: " << man.getTitle() << endl;
     return &man;
   }
   cout << myname << "Invalid plot name: " << sopt << endl;
@@ -482,8 +637,50 @@ cout << "Title3: " << man.getTitle() << endl;
 
 //**********************************************************************
 
-TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname) {
-  TPadManipulator* pman = pad(sopt, selname);
+TPadManipulator* FembTestTickModViewer::padAdc(Index iadc, string sopt, Name selname, Name selovls) {
+  const string myname = "FembTestTickModViewer::pad: ";
+  ostringstream ssnam;
+  if ( iadc > 7 ) return nullptr;
+  ssnam << "adc" << iadc << "_" << sopt << "_" << selname << "_" << selovls;
+  string mnam = ssnam.str();
+  ManMap::iterator iman = m_mans.find(mnam);
+  if ( iman != m_mans.end() ) return &iman->second;
+  TPadManipulator& man = m_mans[mnam];
+  int wy = gROOT->IsBatch() ? 2000 : 1000;
+  man.setCanvasSize(1.4*wy, wy);
+  man.split(4);
+  bool doDrawSave = doDraw();
+  for ( Index kcha=0; kcha<16; ++kcha ) {
+    Index icha = 16*iadc + kcha;
+    ostringstream ssel;
+    if ( selname.size() ) ssel << selname << "_";
+    ssel << "chan";
+    if ( icha < 100 ) ssel << "0";
+    if ( icha < 10 ) ssel << "0";
+    ssel << icha;
+    TPadManipulator* pman = pad(sopt, ssel.str(), selovls);
+    if ( pman == nullptr ) {
+      cout << myname << "Unable to find plot " << sopt << " for selection " << ssel.str() << endl;
+      m_mans.erase(mnam);
+      return nullptr;
+    }
+    *man.man(kcha) = *pman;
+  }
+  return &man;
+}
+
+//**********************************************************************
+
+TPadManipulator* FembTestTickModViewer::draw(string sopt, Name selname, Name selovls) {
+  TPadManipulator* pman = pad(sopt, selname, selovls);
+  if ( pman != nullptr && doDraw() ) pman->draw();
+  return pman;
+}
+
+//**********************************************************************
+
+TPadManipulator* FembTestTickModViewer::drawAdc(Index iadc, string sopt, Name selname, Name selovls) {
+  TPadManipulator* pman = padAdc(iadc, sopt, selname, selovls);
   if ( pman != nullptr && doDraw() ) pman->draw();
   return pman;
 }

@@ -26,11 +26,15 @@ public:
   //using Selection = std::map<Index, IndexVector>;    // Index vectors indexed by channel
   using SelMap = std::map<Name, Selection>;
   using NameMap = std::map<Name, Name>;
+  using IndexMap = std::map<Name, Index>;
 
-  // Ctor fro tree and file holding tree.
+  // Ctor from tree and file holding tree.
   // Tree data is read for channels [icha1, icha1+ncha).
   FembTestTickModViewer(FembTestTickModTree& a_tmt, Index icha1 =0, Index ncha =1); 
   FembTestTickModViewer(std::string fname, Index icha1 =0, Index ncha =1); 
+
+  // Display help message.
+  void help() const;
 
   // Getters.
   FembTestTickModTree& tmt() { return m_tmt; }
@@ -55,10 +59,14 @@ public:
   // Get plot sopt for selection selname.
   // Use sopt="" for help.
   // Draw also puts plot on a canvas.
-  // hsit returns the histogram associated with a pad.
-  TPadManipulator* pad(std::string sopt ="", Name selname ="all");
-  TPadManipulator* draw(std::string sopt ="", Name selname ="all");
+  // hist returns the histogram associated with a pad.
+  TPadManipulator* pad(std::string sopt ="", Name selname ="all", Name selovls ="");
+  TPadManipulator* draw(std::string sopt ="", Name selname ="all", Name selovls ="");
   TH1* hist(std::string sopt ="", Name selname ="all");
+
+  // Create a pad with a plot for channel in an ADC.
+  TPadManipulator* padAdc(Index iadc, std::string sopt ="", Name selname ="all", Name selovls ="");
+  TPadManipulator* drawAdc(Index iadc, std::string sopt ="", Name selname ="all", Name selovls ="");
 
 private:
 
@@ -70,6 +78,9 @@ private:
   IndexVector m_chans;  // Channels with a tree.
   SelMap m_sels;        // Selection vectors indexed by name
   NameMap m_sellabs;    // Selection labels indexed by name
+  IndexMap m_selcols;   // Selection colors indexed by name
+  float pedLimit =  5.0;
+  float mipLimit = 50.0;
 
 };
 

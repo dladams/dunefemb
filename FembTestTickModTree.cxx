@@ -17,7 +17,7 @@ using std::ostringstream;
 //**********************************************************************
 
 FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
-: m_pdata(nullptr), m_ptreeWrite(nullptr), m_chanWrite(99999) {
+: m_pdata(nullptr), m_needWrite(false), m_ptreeWrite(nullptr), m_chanWrite(99999) {
   const string myname = "FembTestTickModTree::ctor: ";
   TDirectory* pdirSave = gDirectory;
   cout << myname << "Opening " << fname << " in mode " << sopt << endl;
@@ -67,7 +67,7 @@ FembTestTickModTree::FembTestTickModTree(string fname, string sopt)
 
 FembTestTickModTree::~FembTestTickModTree() {
   const string myname = "FembTestTickModTree::dtor: ";
-  cout << myname << endl;
+  //cout << myname << endl;
   if ( file() != nullptr ) {
     TDirectory* pdirSave = gDirectory;
     if ( pdirSave == file() ) pdirSave = nullptr;
@@ -99,11 +99,11 @@ void FembTestTickModTree::clear() {
   m_data.chan = 999;
   m_data.ped0 = 0.0;
   m_data.qexp = 0.0;
-  m_data.ievt = -1;
-  m_data.itmx = -1;
-  m_data.itmn = -1;
+  m_data.ievt = 999999;
+  m_data.itmx = 999999;
+  m_data.itmn = 999999;
   m_data.pede = 0.0;
-  m_data.itmd = -1;
+  m_data.itmd = 999999;
   m_data.cmea = 0.0;
   m_data.crms = 0.0;
   m_data.sadc = -1.0;
@@ -287,13 +287,19 @@ DataMap FembTestTickModTree::fill(AdcChannelData& acd) {
 //**********************************************************************
 
 void FembTestTickModTree::write() {
-  const string myname = "FembTestTickModTree::writing: ";
+  const string myname = "FembTestTickModTree::write: ";
+  bool dbg = false;
+  cout << myname << "Saving trees." << endl;
   TDirectory* pdirSave = gDirectory;
-  cout << myname << "Before purge: " << endl;
-  file()->ls();
+  if ( dbg ) {
+    cout << myname << "Before purge: " << endl;
+    file()->ls();
+  }
   file()->Purge();
-  cout << myname << "After purge: " << endl;
-  file()->ls();
+  if ( dbg ) {
+    cout << myname << "After purge: " << endl;
+    file()->ls();
+  }
   file()->Write();
   if ( pdirSave != nullptr ) pdirSave->cd();
   m_needWrite = false;

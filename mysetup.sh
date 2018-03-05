@@ -1,5 +1,5 @@
-LARREL=v06_67_01
-DUNREL=v06_67_01
+LARREL=v06_70_00
+DUNREL=v06_70_00
 QUAL=e15:prof
 QUALU=`echo $QUAL | sed 's/:/_/g'`
 source $HOME/ups/setups
