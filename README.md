@@ -28,6 +28,12 @@ DUNETPC_CFLAGS=-O3 -g -gdwarf-2 -fno-omit-frame-pointer
 DUNETPC_LIB=/home/dladams/ups/dunetpc/v06_72_00/slf6.x86_64.e14.prof/lib
 DUNETPC_FQ_DIR=/home/dladams/ups/dunetpc/v06_72_00/slf6.x86_64.e14.prof
 ```
+Install the dunefemb package in a dedicated directory and go there:
+```
+> git clone https://github.com/dladams/dunefemb.git
+> cd dunefemb
+```
+
 Edit the top block of mysetup.sh to reflect your local installation. Or better, copy
 it to config.dat and make the changes there.
 
