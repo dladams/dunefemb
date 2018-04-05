@@ -85,7 +85,13 @@ void FembTestTickModViewer::help() const {
        << "\n"
        << "The call to draw returns a TPadManipulator pointer.\n"
        << "It may be replaced with a call to pad to return the pointer without updating\n"
-       << "the screen or with a call to hist to return the primary histogram."
+       << "the screen or with a call to hist to return the primary histogram.\n"
+       << "\n"
+       << "Figures with plots for each channel in an ADC may be displayed with:\n"
+       << "\n"
+       << "  tmv.drawAdc(iadc, myfig, mysel);\n"
+       << "\n"
+       << "where iadc = 0 - 7 is the ADC index on the FEMB and myfig and mysel are as above\n"
        << endl;
 }
 
