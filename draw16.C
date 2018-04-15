@@ -4,10 +4,10 @@ void draw16(int femb, string tspat="", bool isCold=true, int evt=0, int adc1 =0,
   auto prdr = ff.find(femb, isCold, tspat, 3, 3, 1, 1);
   if ( prdr == 0 ) return;
   DuneFembReader& rdr = *prdr;
-  vector<AdcChannelViewer*> vwrs;
-  //vwrs.push_back(ptm->getShared<AdcChannelViewer>("adcPlotRaw"));
-  //vwrs.push_back(ptm->getShared<AdcChannelViewer>("adcPlotRawDist"));
-  vwrs.push_back(ptm->getShared<AdcChannelViewer>("adcPedestalFit"));
+  vector<AdcChannelTool*> vwrs;
+  //vwrs.push_back(ptm->getShared<AdcChannelTool>("adcPlotRaw"));
+  //vwrs.push_back(ptm->getShared<AdcChannelTool>("adcPlotRawDist"));
+  vwrs.push_back(ptm->getShared<AdcChannelTool>("adcPedestalFit"));
   double wy =1000;
   if ( gROOT->IsBatch() ) wy = 2000;
   double wx = 1.4 * wy;

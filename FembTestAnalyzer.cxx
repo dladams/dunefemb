@@ -105,8 +105,8 @@ void FembTestAnalyzer::getTools() {
   }
   fixToolNames(adcModifierNames);
   for ( string modname : adcModifierNames ) {
-    std::unique_ptr<AdcChannelDataModifier> pmod =
-      ptm->getPrivate<AdcChannelDataModifier>(modname);
+    std::unique_ptr<AdcChannelTool> pmod =
+      ptm->getPrivate<AdcChannelTool>(modname);
     if ( ! pmod ) {
       cout << myname << "Unable to find modifier " << modname << endl;
       adcModifiers.clear();
@@ -116,7 +116,7 @@ void FembTestAnalyzer::getTools() {
   }
   fixToolNames(adcViewerNames);
   for ( string vwrname : adcViewerNames ) {
-    auto pvwr = ptm->getPrivate<AdcChannelViewer>(vwrname);
+    auto pvwr = ptm->getPrivate<AdcChannelTool>(vwrname);
     if ( ! pvwr ) {
       cout << myname << "Unable to find viewer " << vwrname << endl;
       adcModifiers.clear();
@@ -307,7 +307,7 @@ processChannelEvent(Index icha, Index ievt) {
   DataMap resmod;
   if ( dbg > 2 ) cout << myname << "Applying modifiers." << endl;
   Index imod = 0;
-  for ( const std::unique_ptr<AdcChannelDataModifier>& pmod : adcModifiers ) {
+  for ( const std::unique_ptr<AdcChannelTool>& pmod : adcModifiers ) {
     string modName = adcModifierNames[imod];
     // For the tickmod ROI builder, if we have a tick period, add it to the channel data.
     if ( modName == "tickModSignalFinder" && tickPeriod() > 0 ) {
@@ -339,7 +339,7 @@ processChannelEvent(Index icha, Index ievt) {
   if ( dbg > 2 ) cout << myname << "Applying viewers." << endl;
   for ( Index ivwr=0; ivwr<adcViewers.size(); ++ivwr ) {
     string vwrName = adcViewerNames[ivwr];
-    const std::unique_ptr<AdcChannelViewer>& pvwr = adcViewers[ivwr];
+    const std::unique_ptr<AdcChannelTool>& pvwr = adcViewers[ivwr];
     if ( dbg > 2 ) cout << "Applying viewer " << vwrName << endl;
     DataMap resvwr = pvwr->view(acd);
     resmod += resvwr;

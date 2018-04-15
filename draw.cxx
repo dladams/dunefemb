@@ -19,8 +19,7 @@
 #include "DuneFembFinder.h"
 #include "dune/ArtSupport/DuneToolManager.h"
 #include "dune/DuneInterface/Data/DataMap.h"
-#include "dune/DuneInterface/Tool/AdcChannelViewer.h"
-#include "dune/DuneInterface/Tool/AdcChannelDataModifier.h"
+#include "dune/DuneInterface/Tool/AdcChannelTool.h"
 #include "dune/DuneCommon/TPadManipulator.h"
 #include "TLatex.h"
 #include "TCanvas.h"
@@ -49,14 +48,14 @@ DataMap draw(int femb, string tspat, bool isCold,
   if ( svwrs == "" ) svwrs = "adcPedestalFit";
   string::size_type ipos = 0;
   string::size_type npos = string::npos;
-  vector<AdcChannelViewer*> vwrs;
+  vector<AdcChannelTool*> vwrs;
   vector<string> vwrnames;
   while ( ipos < svwrs.size() ) {
    string::size_type jpos = svwrs.find(" ", ipos+1);
    if ( jpos == npos ) jpos = svwrs.size();
    string svwr = svwrs.substr(ipos, jpos - ipos);
    vwrnames.push_back(svwr);
-   vwrs.push_back(ptm->getShared<AdcChannelViewer>(svwr));
+   vwrs.push_back(ptm->getShared<AdcChannelTool>(svwr));
    ipos = jpos;
    while ( ipos < svwrs.size() && svwrs[ipos] == ' ' ) ++ipos;
   }
@@ -80,10 +79,10 @@ DataMap draw(int femb, string tspat, bool isCold,
   modnames.push_back("adcPedestalFit");
   modnames.push_back("adcSampleFiller");
   modnames.push_back("adcThresholdSignalFinder");
-  vector<std::unique_ptr<AdcChannelDataModifier>> mods;
-  map<string, const AdcChannelDataModifier*> modmap;
+  vector<std::unique_ptr<AdcChannelTool>> mods;
+  map<string, const AdcChannelTool*> modmap;
   for ( string modname : modnames ) {
-    auto pmod = ptm->getPrivate<AdcChannelDataModifier>(modname);
+    auto pmod = ptm->getPrivate<AdcChannelTool>(modname);
     if ( ! pmod ) {
       cout << myname << "Unable to find modifier " << modname << endl;
       return DataMap(101);
@@ -116,7 +115,7 @@ DataMap draw(int femb, string tspat, bool isCold,
       }
     }
     for ( unsigned int ivwr=0; ivwr<vwrs.size(); ++ivwr ) {
-      AdcChannelViewer* pvwr = vwrs[ivwr];
+      AdcChannelTool* pvwr = vwrs[ivwr];
       DataMap res = pvwr->view(acd);
       res.print();
       resOut += res;

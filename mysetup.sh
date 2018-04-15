@@ -1,10 +1,10 @@
 # Edit these for your local configuration.
 # or (better) copy to config.dat and edit there.
-LARREL=v06_72_00
-DUNREL=v06_72_00
+LARREL=
+DUNREL=
 QUAL=e15:prof
 MYUPSDIR=$HOME/ups/
-MYDEVDIR=$HOME/dudev/dudev01   # If you have a private build of dunetpc.
+MYDEVDIR=                      # If you have a private build of dunetpc.
 
 # There should be no need to change the following.
 if [ -r config.dat ]; then source config.dat; fi

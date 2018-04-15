@@ -7,8 +7,7 @@
 #include "FembTestPulseTree.h"
 #include "FembTestTickModTree.h"
 #include "dune/DuneInterface/Data/DataMap.h"
-#include "dune/DuneInterface/Tool/AdcChannelDataModifier.h"
-#include "dune/DuneInterface/Tool/AdcChannelViewer.h"
+#include "dune/DuneInterface/Tool/AdcChannelTool.h"
 #include "dune/DuneCommon/TPadManipulator.h"
 #include <memory>
 
@@ -204,9 +203,9 @@ private:
   int m_shap;
   std::unique_ptr<DuneFembReader> m_reader;
   std::vector<std::string> adcModifierNames;
-  std::vector<std::unique_ptr<AdcChannelDataModifier>> adcModifiers;
+  std::vector<std::unique_ptr<AdcChannelTool>> adcModifiers;
   std::vector<std::string> adcViewerNames;
-  std::vector<std::unique_ptr<AdcChannelViewer>> adcViewers;
+  std::vector<std::unique_ptr<AdcChannelTool>> adcViewers;
   ManMap m_mans;
   std::unique_ptr<FembTestPulseTree> m_ptreePulse;
   TickModTreePtr m_ptreeTickMod;
