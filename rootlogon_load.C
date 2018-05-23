@@ -32,6 +32,9 @@
   string dtinc = gSystem->Getenv("DUNETPC_INC");
   cout << "Dunetpc include dir: " << dtinc << endl;
   string sarg = "-I" + dtinc;
+  string drinc = gSystem->Getenv("DUNE_RAW_DATA_INC");
+  cout << "Dune_raw data include dir: " << drinc << endl;
+  sarg = "-I" + drinc;
   gSystem->AddIncludePath(sarg.c_str());
   // Load the dunetpc and supporting libraries.
   vector<string> libs;

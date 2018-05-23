@@ -5,10 +5,12 @@
 //
 // Root startup file fo dunefemb.
 
-#define ADDSERVICES 0
+#define ADDSERVICES 1
 
 // Define service helper.
-#if ADDSERVICES
+#if ADDSERVICES == 1
+ArtServiceHelper& ash = ArtServiceHelper::load("services.fcl");
+#elif ADDSERVICES == 2
 ArtServiceHelper& ash = ArtServiceHelper::load("standard_reco_dune35tdata.fcl");
 #endif
 

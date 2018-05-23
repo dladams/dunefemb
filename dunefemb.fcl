@@ -54,4 +54,7 @@ tools.fembCalibratorG2S2Warm: {
   DirName:  "calibFromFemb_g2s2_warm"
 }
 
+tools.adcPedestalFit.FitRmsMin:  3.0
+tools.adcPedestalFit.FitRmsMas: 10.0
+
 #tools.adcRoiViewer.LogLevel: 3
